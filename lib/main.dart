@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_state.dart';
 import 'store/session_store.dart';
+import 'ui/design_screen.dart';
 import 'ui/impulse_screen.dart';
 import 'ui/map_screen.dart';
 import 'ui/rta_screen.dart';
@@ -78,6 +79,7 @@ class _HomeState extends State<_Home> {
       ScanScreen(state: widget.state),
       MapScreen(state: widget.state, store: widget.store),
       ImpulseScreen(state: widget.state, store: widget.store),
+      DesignScreen(state: widget.state, store: widget.store),
       SignalsScreen(store: widget.store),
     ];
 
@@ -94,6 +96,8 @@ class _HomeState extends State<_Home> {
           NavigationDestination(icon: Icon(Icons.map_outlined), label: 'Mapa'),
           NavigationDestination(
               icon: Icon(Icons.timeline), label: 'Odezva'),
+          NavigationDestination(
+              icon: Icon(Icons.architecture), label: 'Návrh'),
           NavigationDestination(
               icon: Icon(Icons.waves), label: 'Signály'),
         ],

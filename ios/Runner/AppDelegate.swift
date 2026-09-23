@@ -9,6 +9,11 @@ import UIKit
   private let audioCapture = AudioCapture()
   private let arTracker = ARTracker()
 
+  /// RoomPlan needs iOS 16; on anything older the channel is simply never
+  /// registered and Dart's `isSupported` returns false through the missing-plugin
+  /// path, which is the answer it wants anyway.
+  private var roomScanner: AnyObject?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -25,6 +30,13 @@ import UIKit
     }
     if let arRegistrar = registry.registrar(forPlugin: "AudioScannerAR") {
       arTracker.register(with: arRegistrar)
+    }
+    if #available(iOS 16.0, *) {
+      let scanner = RoomScanner()
+      roomScanner = scanner
+      if let roomRegistrar = registry.registrar(forPlugin: "AudioScannerRoom") {
+        scanner.register(with: roomRegistrar)
+      }
     }
   }
 }

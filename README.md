@@ -33,6 +33,7 @@ jak je:
 | **2 — AR body** | Hotovo. ARKit world tracking, počátek klepnutím, „změřit tady" s 3s průměrováním, průběžný režim po 0,5 m, půdorysná IDW heatmapa s posuvníkem pásem. |
 | **3 — Impulzní odezva** | Hotovo. Farinova dekonvoluce log sweepem, přímý zvuk, první odraz, gating, RT60 (T20/T30, Schroeder), Schroederova křivka. |
 | **4 — Výstupy** | Částečně. FRD per bod i z gated odezvy, JSON session, doporučení nejrovnějšího místa. **3D mrak bodů není** — plán sám píše, že výška málokdy přidá informaci, tak jsem zůstal u 2D. |
+| **5 — Návrh konfigurace** | Hotovo. LiDAR geometrie přes RoomPlan, módy místnosti modální sumací, softwarový „subwoofer crawl", body prvních odrazů zrcadlením, kontrola úhlů proti Dolby, generátor nastavení pro Integra DRX-8.4 včetně jeho 15 EQ pásem. |
 
 ### Co vědomě chybí
 
@@ -65,13 +66,23 @@ lib/
 │   └── wav.dart                RIFF zápis, mono/stereo, 16bit/float32
 ├── model/                      Vec3, Measurement, Session
 ├── analysis/heatmap.dart       IDW interpolace, nejrovnější místo
+├── room/
+│   ├── room_capture.dart       platform channel → RoomPlan (LiDAR)
+│   ├── room_geometry.dart      kvádrový fit, Schroeder, poměry stran
+│   ├── room_modes.dart         vlastní frekvence + modální sumace
+│   ├── placement.dart          hledání místa pro sub a pro posluchače, SBIR, odrazy
+│   ├── speaker_layout.dart     Dolby úhly, symetrie párů
+│   ├── speaker_model.dart      schopnosti repro → dělicí kmitočty
+│   └── design_report.dart      spojení geometrie a měření do nálezů
 ├── export/frd.dart             FRD pro REW / VituixCAD
+├── export/avr_config.dart      nastavení přijímače včetně EQ presetů
 ├── store/session_store.dart    JSON na disk, atomický zápis
 └── ui/                         RTA · sken · mapa · odezva · signály
 
 ios/Runner/
 ├── AudioCapture.swift          AVAudioSession .measurement, AVAudioEngine tap
-└── ARTracker.swift             ARWorldTracking bez rendereru
+├── ARTracker.swift             ARWorldTracking bez rendereru
+└── RoomScanner.swift           RoomPlan — parametrické stěny, ne mesh
 ```
 
 Backend žádný. Všechno zůstává v telefonu.
@@ -93,6 +104,38 @@ Backend žádný. Všechno zůstává v telefonu.
   kde se nechodilo, plocha zplacatí místo aby si vymyslela strukturu. Buňka dál
   než `maxDistance` od měření zůstane **prázdná**, ne modrá.
 
+## Geometrie + měření
+
+Měření samo o sobě řekne *co* je v posluchačském místě špatně, ale ne proč — a
+nerozliší mód od interference se stěnou od repro, který je prostě malý.
+Geometrie všechny tři předpoví a neví o žádném z nich. Teprve dohromady
+pojmenují příčinu, a příčina je rozdíl mezi „uber 6 dB na 63 Hz" a „posuň
+pohovku o 40 cm".
+
+Co z toho vzniká:
+
+- **Módy místnosti** z rozměrů, modální sumací s tlumením podle změřeného RT60.
+  Bez tlumení je každý mód nekonečně ostrý a předpověď je nesmysl.
+- **Místo pro subwoofer** — softwarový „subwoofer crawl". Skutečný crawl
+  funguje díky akustické reciprocitě (zdroj a přijímač jdou prohodit beze
+  změny přenosu); táž reciprocita dělá legitimním prohledat sto pozic za
+  vteřinu místo deseti po kolenou. Ověřeno testem.
+- **Místo pro pohovku** — totéž obráceně. Nulu vyekvalizovat nejde, není co
+  zvedat.
+- **Body prvních odrazů** zrcadlením přes stěny. S LiDARem to přestává být
+  „drž zrcátko a ať kamarád chodí" a stává se souřadnicí.
+- **SBIR** — propad na c/(4·d) od nejbližší plochy. Nejčastější díra v horním
+  basu, kterou ekvalizér nespraví: boost do zádrhele jen pošle víc výkonu do
+  toho, co ruší.
+- **Úhly proti Dolby** — a hlavně symetrie párů. Distance a level trim srovnají
+  asymetrický pár v jednom bodě a v tabulce to vypadá perfektně, ale každý
+  repro pořád vidí jinou stěnu jinak daleko.
+
+Výstup je list nastavení pro Integra DRX-8.4: vzdálenosti, dělicí kmitočty,
+hladiny a EQ preset v jeho vlastních patnácti pásmech. EQ se řídí dvěma
+pravidly — **řezat volně, zvedat sotva**, a nesahat nad Schroederovu frekvenci,
+protože nad ní jednobodové měření popisuje ten bod, ne místnost.
+
 ## Jak měřit
 
 1. Signál pusť **z počítače do beden**, ne z telefonu. V záložce Signály si
@@ -107,7 +150,7 @@ Backend žádný. Všechno zůstává v telefonu.
 
 ## Ověření
 
-`flutter test` — 45 testů, všechny procházejí. Co reálně ověřují:
+`flutter test` — 74 testů, všechny procházejí. Co reálně ověřují:
 
 - **Spektrum:** sinus na plné výchylce čte 0 dBFS (ne −6 dB, které by dal
   nekompenzovaný Hann); 1 kHz tón padne do pásma 1 kHz a o dvě pásma vedle je
@@ -121,6 +164,15 @@ Backend žádný. Všechno zůstává v telefonu.
 - **IDW** prochází naměřenými body a nechává neproměřené místo prázdné.
 - **FRD** píše 31 řádků, respektuje kalibrační offset, rozbaluje fázi.
 - **Store** přežije poškozený soubor bez ztráty ostatních session.
+- **Módy:** první axiální mód vychází přesně na c/2L, druhý na dvojnásobku.
+- **Modální sumace je reciproká** — prohození zdroje a přijímače nezmění
+  odpověď. Kdyby tohle selhalo, je celé hledání místa pro subwoofer k ničemu.
+- **SBIR** trefí propad na c/(4·d), **odrazy** u souměrného repro padnou přesně
+  doprostřed, a delší RT60 měřitelně zhorší rozptyl.
+- **Dělicí kmitočty** nikdy nevrátí hodnotu, která na přijímači nejde nastavit,
+  Atmos moduly nikdy nedostanou míň než 100 Hz a nic nepřekročí 120 Hz.
+- **EQ** řeže hrb, ale nehoní nulu, drží krok a rozsah přijímače a nesahá nad
+  Schroederovu frekvenci.
 
 `flutter build ios --no-codesign` prochází — nativní Swift se přeloží a slinkuje.
 

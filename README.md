@@ -44,9 +44,10 @@ jak je:
 - **Fáze ve FRD z pásmových dat.** Píše se tam nula, a to záměrně:
   třetinooktávový průměr žádnou fázi nemá a vymyšlená by v VituixCADu skončila
   jako podklad pro výhybku.
-- **Android.** Plán říká iOS first, projekt je scaffoldnutý jen pro iOS. Dart
-  vrstva je platformně neutrální; chybí protějšek `AudioCapture.swift`
-  (`AudioSource.UNPROCESSED`) a `ARTracker.swift` (ARCore).
+- **RoomPlan na Androidu neexistuje.** Android místo něj boxuje vertikální
+  roviny z ARCore — vidí stěny, na které se kamera koukala, málokdy rohy,
+  nikdy za nábytkem. Na pojmenování módu to stačí, na body odrazů ne, a
+  geometrie to o sobě nese jako `GeometrySource.arPlanes`.
 - **Srovnání L vs R v appce.** Export sweepu zvlášť do každého kanálu je hotový,
   porovnávací pohled ne.
 
@@ -83,6 +84,11 @@ ios/Runner/
 ├── AudioCapture.swift          AVAudioSession .measurement, AVAudioEngine tap
 ├── ARTracker.swift             ARWorldTracking bez rendereru
 └── RoomScanner.swift           RoomPlan — parametrické stěny, ne mesh
+
+android/app/src/main/kotlin/com/ol1n/audio_scanner/
+├── AudioCapture.kt             AudioRecord UNPROCESSED s detekcí + fallback
+├── ArTracker.kt                ARCore v offscreen EGL kontextu; pozice + roviny
+└── MainActivity.kt             registrace kanálů, runtime permissions
 ```
 
 Backend žádný. Všechno zůstává v telefonu.
@@ -97,6 +103,14 @@ Backend žádný. Všechno zůstává v telefonu.
   nad `Float64List`.
 - **ARKit bez `ARSCNView`.** Chce se jen pozice; vynechaný renderer šetří baterii
   i teplotu na několikaminutové chůzi.
+- **ARCore v 1×1 pbufferu.** Na Androidu se `Session.update()` bez GL textury
+  pro kameru odmítne rozjet, tak dostane neviditelný EGL kontext, do kterého
+  nikdy nic nekreslí. Jedna session obsluhuje oba kanály — pozici i roviny.
+- **`UNPROCESSED` není zaručený.** iOS `.measurement` mode prostě je; Android
+  ho jen *nabízí* tam, kde ho výrobce implementoval, a
+  `PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED` je jediný poctivý způsob, jak se
+  to dozvědět. Kde chybí, jede `VOICE_RECOGNITION` a Dart dostane
+  `processingDisabled: false` — appka pak varuje, nemlčí.
 - **JSON místo SQLite.** Session je pár set bodů, zapisuje se celá naráz a ten
   soubor je přesně to, co se má dát sdílet. Databáze by přidala migrace schématu
   a nic nevrátila.
@@ -175,6 +189,7 @@ protože nad ní jednobodové měření popisuje ten bod, ne místnost.
   Schroederovu frekvenci.
 
 `flutter build ios --no-codesign` prochází — nativní Swift se přeloží a slinkuje.
+`flutter build apk` (debug i release) prochází — Kotlin s ARCore 1.56 taky.
 
 **Na skutečném zařízení netestováno.** Akceptační testy z plánu (stojaté vlnění
 při chůzi od bedny, rozptyl < 1 dB při trojím měření téhož bodu, návrat na bod
@@ -187,10 +202,16 @@ Dokud neproběhnou, je ověřená matematika, ne měření.
 flutter pub get
 flutter test
 flutter build ios          # potřebuje podepisování pro nasazení na zařízení
+flutter build apk          # release, podepsaný debug klíčem — na sideload stačí
 ```
 
-Minimum iOS 14.5 (kvůli `setPrefersNoInterruptionsFromSystemAlerts`), ARKit
-vyžaduje A9 a novější.
+iOS: minimum 14.5 (kvůli `setPrefersNoInterruptionsFromSystemAlerts`), ARKit
+vyžaduje A9 a novější, RoomPlan LiDAR (iPhone 12 Pro / iPad Pro 2020+).
+
+Android: minSdk 24 (ARCore). ARCore je v manifestu `optional` — bez něj se
+appka nainstaluje a funguje analyzátor, odezva i signály, jen chůze po
+místnosti ne. Release APK je podepsaný debug klíčem; pro Play Store je potřeba
+vlastní keystore.
 
 ## Reference
 

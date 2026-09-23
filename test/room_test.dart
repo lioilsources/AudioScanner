@@ -308,6 +308,24 @@ void main() {
       expect(scanned.caveat, isNull);
     });
 
+    test('Android plane geometry is labelled as the estimate it is', () {
+      // The Android side boxes ARCore's vertical planes. Its "irregularity" is
+      // really perimeter coverage, and the caveat must say the source is plane
+      // detection — a user reading reflection points off this would be misled.
+      final scanned = RoomCapture.parseRoom({
+        'source': 'arPlanes',
+        'length': 5.8, 'width': 4.1, 'height': 2.5,
+        'irregularity': 0.35, 'wallCount': 3,
+        'walls': const [], 'openings': const [],
+      });
+      expect(scanned.geometry.source, GeometrySource.arPlanes);
+      expect(scanned.caveat, contains('ARCore'));
+      expect(scanned.caveat, contains('65 % obvodu'));
+      // Modal maths still runs on it — that is the whole point of having it.
+      expect(modesBelow(scanned.geometry, maxHz: 40).first.frequency,
+          closeTo(speedOfSound / (2 * 5.8), 0.01));
+    });
+
     test('says so when the room is not a box', () {
       final scanned = RoomCapture.parseRoom({
         'length': 6.0, 'width': 4.0, 'height': 2.5,

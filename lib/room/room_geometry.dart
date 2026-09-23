@@ -171,6 +171,12 @@ enum GeometrySource {
   /// RoomPlan's parametric walls — a LiDAR device.
   lidar,
 
+  /// ARCore's detected vertical planes, boxed. Android has no RoomPlan, so
+  /// walls are whatever plane detection managed to see: usually the big
+  /// ones, rarely the corners, never behind furniture. Good enough to name
+  /// which mode a peak belongs to; not good enough for reflection points.
+  arPlanes,
+
   /// A bounding box over the walked measurement points. Rough: it only knows
   /// where someone walked, which is never all the way into the corners.
   measurementHull,

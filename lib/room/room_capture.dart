@@ -45,6 +45,16 @@ class ScannedRoom {
   bool get boxLikeEnough => geometry.irregularity < 0.25;
 
   String? get caveat {
+    if (geometry.source == GeometrySource.arPlanes) {
+      // Plane detection sees the walls it happened to look at. The box is
+      // usually a little small and the irregularity is really "how much of
+      // the perimeter was seen", which is a different thing from an alcove.
+      return 'Geometrie je z detekce rovin ARCore, ne z LiDARu: viděno '
+          '$wallCount stěn, pokryto '
+          '${((1 - geometry.irregularity) * 100).toStringAsFixed(0)} % obvodu. '
+          'Módy budou sedět na pár procent; body odrazů a vzdálenosti ke '
+          'stěnám ber s rezervou, nebo rozměry zadej ručně.';
+    }
     if (boxLikeEnough) return null;
     return 'Místnost se od kvádru liší o '
         '${(geometry.irregularity * 100).toStringAsFixed(0)} % plochy stěn '
@@ -119,7 +129,10 @@ class RoomCapture {
         height: d('height') > 0 ? d('height') : 2.6,
         irregularity: d('irregularity'),
         rt60: rt60,
-        source: GeometrySource.lidar,
+        // iOS sends no source and means RoomPlan; Android names its own.
+        source: m['source'] == 'arPlanes'
+            ? GeometrySource.arPlanes
+            : GeometrySource.lidar,
         arOrigin: Vec3(d('originX'), 0, d('originZ')),
       ),
       walls: walls('walls'),

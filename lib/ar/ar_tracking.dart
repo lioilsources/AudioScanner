@@ -59,6 +59,7 @@ class ArPose {
         'insufficientFeatures' =>
           'Málo detailů v obraze — namiř telefon na něco členitého, ne na holou stěnu.',
         'excessiveMotion' => 'Moc rychlý pohyb — jdi pomaleji.',
+        'insufficientLight' => 'Málo světla — rozsviť, kamera nevidí, kde je.',
         'initializing' => 'ARKit se rozjíždí, chvíli se pohybuj.',
         'relocalizing' =>
           'Hledá se zpět původní bod — vrať se, kde jsi začínal.',

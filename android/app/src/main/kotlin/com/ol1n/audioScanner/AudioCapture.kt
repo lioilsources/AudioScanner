@@ -1,4 +1,4 @@
-package com.ol1n.audio_scanner
+package com.ol1n.audioScanner
 
 import android.content.Context
 import android.media.AudioDeviceInfo

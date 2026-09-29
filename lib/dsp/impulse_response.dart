@@ -231,15 +231,17 @@ class ImpulseResponse {
   /// [decayDb] picks the evaluation range: 20 gives T20 (−5 … −25 dB), 30 gives
   /// T30 (−5 … −35 dB), both extrapolated to a full 60 dB decay. The −5 dB head
   /// start is deliberate — the first few dB are the direct sound, not the room.
+  /// EDT is the exception: [startDb] 0 and [decayDb] 10, the first ten dB
+  /// including the direct sound, which is closer to what reverberance sounds
+  /// like than the late slope is.
   ///
   /// Returns null when the decay never reaches the range, which in a phone
   /// measurement usually means the noise floor got there first. That is a real
   /// answer, not a failure: it says this recording cannot support an RT60.
-  Duration? rt60({double decayDb = 20}) {
+  Duration? rt60({double decayDb = 20, double startDb = -5}) {
     final energy = schroederCurveDb();
     if (energy.isEmpty) return null;
 
-    const startDb = -5.0;
     final endDb = startDb - decayDb;
 
     final i1 = _firstIndexBelow(energy, startDb);
@@ -264,6 +266,51 @@ class ImpulseResponse {
 
     final samplesFor60 = -60 / slope;
     return Duration(microseconds: (samplesFor60 / sampleRate * 1e6).round());
+  }
+
+  /// Clarity: early-to-late energy ratio in dB, split at [early] after the
+  /// direct sound. C50 is the speech figure, C80 the music one.
+  ///
+  /// Positive means the direct sound and first reflections carry more energy
+  /// than the tail. Returns null when there is no tail at all to divide by —
+  /// a gated or synthetic response — rather than an infinite number.
+  double? clarityDb(Duration early) {
+    final direct = directSoundIndex;
+    final split = direct + _toSamples(early);
+    if (split >= samples.length) return null;
+    var earlyE = 0.0, lateE = 0.0;
+    for (var i = direct; i < samples.length; i++) {
+      final e = samples[i] * samples[i];
+      if (i < split) {
+        earlyE += e;
+      } else {
+        lateE += e;
+      }
+    }
+    if (lateE <= 0 || earlyE <= 0) return null;
+    return 10 * math.log(earlyE / lateE) / math.ln10;
+  }
+
+  /// Energy-time curve: 20·log of the envelope, in dB relative to the direct
+  /// sound, one value per [binSize]. The envelope is the peak within each bin,
+  /// which is all a decay plot needs and needs no analytic signal.
+  Float64List energyTimeCurveDb({Duration binSize = const Duration(microseconds: 100)}) {
+    final bin = math.max(1, _toSamples(binSize));
+    final direct = directSoundIndex;
+    final ref = samples[direct].abs();
+    if (ref <= 0) return Float64List(0);
+    final count = (samples.length / bin).ceil();
+    final out = Float64List(count);
+    for (var b = 0; b < count; b++) {
+      var peak = 0.0;
+      final end = math.min(samples.length, (b + 1) * bin);
+      for (var i = b * bin; i < end; i++) {
+        final a = samples[i].abs();
+        if (a > peak) peak = a;
+      }
+      out[b] = peak <= 0 ? -160 : 20 * math.log(peak / ref) / math.ln10;
+    }
+    return out;
   }
 
   /// Schroeder decay curve in dB, normalised to 0 dB at the direct sound.

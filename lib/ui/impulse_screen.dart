@@ -9,8 +9,10 @@ import '../dsp/impulse_response.dart';
 import '../export/frd.dart';
 import '../signal/log_sweep.dart';
 import '../store/session_store.dart';
+import '../analysis/decay_analysis.dart';
 import 'compare_screen.dart';
 import 'widgets/response_chart.dart';
+import 'widgets/time_chart.dart';
 
 /// Phase 3: record a sweep, deconvolve it, read the room's timing.
 ///
@@ -159,7 +161,11 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                   onSmoothingChanged: (f) => setState(() => _smoothing = f),
                 ),
                 const SizedBox(height: 12),
+                _TimeCard(ir: ir, gate: _gate),
+                const SizedBox(height: 12),
                 _Results(ir: ir, gate: _gate),
+                const SizedBox(height: 12),
+                _BandTable(decay: s.decayAnalysis),
               ],
             ],
           ),
@@ -295,6 +301,151 @@ class _ResponseCard extends StatelessWidget {
                   onSelectionChanged: (s) => onSmoothingChanged(s.first),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Impulse or energy-time curve, with the gate and the first reflection
+/// marked on it.
+class _TimeCard extends StatefulWidget {
+  const _TimeCard({required this.ir, required this.gate});
+
+  final ImpulseResponse ir;
+  final Duration gate;
+
+  @override
+  State<_TimeCard> createState() => _TimeCardState();
+}
+
+class _TimeCardState extends State<_TimeCard> {
+  bool _etc = true;
+  double _spanMs = 100;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Čas', style: t.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 160,
+              child: TimeChart(
+                ir: widget.ir,
+                gate: widget.gate,
+                etc: _etc,
+                spanMs: _spanMs,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('ETC (dB)')),
+                    ButtonSegment(value: false, label: Text('impuls')),
+                  ],
+                  selected: {_etc},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (v) => setState(() => _etc = v.first),
+                ),
+                SegmentedButton<double>(
+                  segments: const [
+                    ButtonSegment(value: 20, label: Text('20 ms')),
+                    ButtonSegment(value: 100, label: Text('100 ms')),
+                    ButtonSegment(value: 500, label: Text('500 ms')),
+                  ],
+                  selected: {_spanMs},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (v) => setState(() => _spanMs = v.first),
+                ),
+              ],
+            ),
+            Text(
+              'Modré je okno, oranžová čára první nalezený odraz. Čas nula je '
+              'přímý zvuk.',
+              style: t.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// EDT, T20, T30, C50 per octave.
+class _BandTable extends StatelessWidget {
+  const _BandTable({required this.decay});
+
+  final DecayAnalysis? decay;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final d = decay;
+    if (d == null) return const SizedBox.shrink();
+    String sec(Duration? v) =>
+        v == null ? '—' : (v.inMilliseconds / 1000).toStringAsFixed(2);
+    String db(double? v) => v == null ? '—' : v.toStringAsFixed(1);
+    String hz(double v) => v >= 1000 ? '${(v / 1000).round()}k' : v.round().toString();
+    final mid = d.midBandRt60Seconds;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Doznívání po oktávách', style: t.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Table(
+              columnWidths: const {0: FixedColumnWidth(48)},
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+              children: [
+                TableRow(children: [
+                  for (final h in ['Hz', 'EDT', 'T20', 'T30', 'C50'])
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(h,
+                          textAlign: TextAlign.end,
+                          style: t.textTheme.labelSmall),
+                    ),
+                ]),
+                for (final b in d.bands)
+                  TableRow(children: [
+                    for (final cell in [
+                      hz(b.centerHz),
+                      sec(b.edt),
+                      sec(b.t20),
+                      sec(b.t30),
+                      db(b.c50Db),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Text(cell,
+                            textAlign: TextAlign.end,
+                            style: t.textTheme.bodySmall),
+                      ),
+                  ]),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${mid == null ? 'Střední pásma nedoklesla dost na T20.' : 'Střed 125–500 Hz: T20 ${mid.toStringAsFixed(2)} s — to je RT60, se kterým počítá návrh.'} '
+              'V basech je RT60 z telefonu spíš odhad: šum pozadí tam bývá '
+              'nejblíž a „—" znamená, že dozvuk pod něj nedoklesl. C50 nad '
+              'nulou: přímý zvuk s prvními odrazy nese víc energie než dozvuk.',
+              style: t.textTheme.bodySmall,
             ),
           ],
         ),

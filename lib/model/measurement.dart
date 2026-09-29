@@ -51,6 +51,7 @@ class ImpulseSummary {
     this.firstReflectionMs,
     this.rt20,
     this.rt30,
+    this.midBandRt60Seconds,
     this.file,
   });
 
@@ -60,6 +61,11 @@ class ImpulseSummary {
   final double? firstReflectionMs;
   final Duration? rt20;
   final Duration? rt30;
+
+  /// Mean T20 of the 125–500 Hz octaves — the reverberation time the
+  /// Schroeder frequency and the modal predictions should use, as opposed to
+  /// the broadband figure the treble decay dominates.
+  final double? midBandRt60Seconds;
 
   /// Gate the [gatedBandsDb] were taken with.
   final double gateMs;
@@ -74,6 +80,7 @@ class ImpulseSummary {
     ImpulseResponse ir, {
     Duration gate = const Duration(milliseconds: 5),
     String? file,
+    double? midBandRt60Seconds,
   }) {
     final gated = ir.gated(window: gate);
     final (freqs, levels) = gated.frequencyResponse();
@@ -87,6 +94,7 @@ class ImpulseSummary {
       rt30: ir.rt60(decayDb: 30),
       gateMs: gate.inMicroseconds / 1000,
       gatedBandsDb: bandMeansFromTransferDb(levels, binHz: freqs[1]),
+      midBandRt60Seconds: midBandRt60Seconds,
       file: file,
     );
   }
@@ -96,6 +104,7 @@ class ImpulseSummary {
         if (firstReflectionMs != null) 'firstReflectionMs': firstReflectionMs,
         if (rt20 != null) 'rt20Ms': rt20!.inMilliseconds,
         if (rt30 != null) 'rt30Ms': rt30!.inMilliseconds,
+        if (midBandRt60Seconds != null) 'midBandRt60': midBandRt60Seconds,
         'gateMs': gateMs,
         'gatedBandsDb': gatedBandsDb,
         if (file != null) 'file': file,
@@ -110,6 +119,7 @@ class ImpulseSummary {
         rt30: j['rt30Ms'] == null
             ? null
             : Duration(milliseconds: (j['rt30Ms'] as num).round()),
+        midBandRt60Seconds: (j['midBandRt60'] as num?)?.toDouble(),
         gateMs: (j['gateMs'] as num).toDouble(),
         gatedBandsDb: [
           for (final v in j['gatedBandsDb'] as List) (v as num).toDouble()

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import 'analysis/decay_analysis.dart';
 import 'ar/ar_tracking.dart';
 import 'audio/audio_capture.dart';
 import 'dsp/impulse_response.dart';
@@ -168,6 +169,17 @@ class AppState extends ChangeNotifier {
         deconvolveSweep(recording: List<double>.of(_recording), sweep: sweep);
     notifyListeners();
     return _impulseResponse;
+  }
+
+  DecayAnalysis? _decay;
+
+  /// Band decay figures of the current response, computed on first use.
+  DecayAnalysis? get decayAnalysis {
+    final ir = _impulseResponse;
+    if (ir == null) return null;
+    final d = _decay;
+    if (d != null && d.matches(ir)) return d;
+    return _decay = DecayAnalysis.of(ir);
   }
 
   double get recordedSeconds =>
@@ -341,7 +353,10 @@ class AppState extends ChangeNotifier {
       arAccuracy: p?.quality.name,
       channel: channel,
       afterEq: afterEq,
-      impulse: ImpulseSummary.from(ir, gate: gate, file: file),
+      impulse: ImpulseSummary.from(ir,
+          gate: gate,
+          file: file,
+          midBandRt60Seconds: decayAnalysis?.midBandRt60Seconds),
     );
     session.points.add(point);
     await store?.save(session);

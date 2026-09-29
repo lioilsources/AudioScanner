@@ -10,6 +10,7 @@ import '../room/room_geometry.dart';
 import '../room/speaker_layout.dart';
 import '../store/session_store.dart';
 import '../export/avr_config.dart';
+import '../model/measurement.dart';
 import 'channel_measure_card.dart';
 import 'widgets/eq_preview.dart';
 
@@ -60,21 +61,32 @@ class _DesignScreenState extends State<DesignScreen> {
     });
   }
 
-  RoomGeometry get _room =>
-      _scanned?.geometry ??
-      RoomGeometry(
-        length: _length,
-        width: _width,
-        height: _height,
-        // A measured impulse response beats the Sabine guess whenever there is
-        // one — damping drives every modal prediction below.
-        rt60: widget.state.impulseResponse
-                ?.rt60()
-                ?.inMilliseconds
-                .toDouble()
-                .let((ms) => ms / 1000) ??
-            0.4,
-      );
+  /// Reverberation time for the geometry, best source first: the mid-band
+  /// figure of the response in memory, then of the latest channel sweep on
+  /// disk, then a guess. Which one it was is shown, because every modal
+  /// prediction and the Schroeder limit hang on it.
+  (double, String) get _rt60 {
+    final live = widget.state.decayAnalysis?.midBandRt60Seconds;
+    if (live != null) return (live, 'T20 125–500 Hz z poslední odezvy');
+    final session = widget.state.session;
+    if (session != null) {
+      Measurement? latest;
+      for (final p in session.channelPoints) {
+        if (p.impulse?.midBandRt60Seconds == null) continue;
+        if (latest == null || p.timestamp.isAfter(latest.timestamp)) latest = p;
+      }
+      final stored = latest?.impulse?.midBandRt60Seconds;
+      if (stored != null) return (stored, 'T20 125–500 Hz z uloženého sweepu');
+    }
+    return (0.4, 'odhad — změř sweep, Schroeder je zatím jen tip');
+  }
+
+  RoomGeometry get _room {
+    final scanned = _scanned?.geometry;
+    final (rt60, _) = _rt60;
+    if (scanned != null) return scanned.copyWith(rt60: rt60);
+    return RoomGeometry(length: _length, width: _width, height: _height, rt60: rt60);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -237,7 +249,8 @@ class _DesignScreenState extends State<DesignScreen> {
       const SizedBox(height: 16),
       Text('Módy místnosti', style: t.textTheme.titleLarge),
       Text('Nad ${r.room.schroederFrequency.toStringAsFixed(0)} Hz '
-          '(Schroeder) už jednotlivé módy nedávají smysl.',
+          '(Schroeder) už jednotlivé módy nedávají smysl. '
+          'RT60 ${r.room.rt60.toStringAsFixed(2)} s: ${_rt60.$2}.',
           style: t.textTheme.bodySmall),
       const SizedBox(height: 8),
       Wrap(
@@ -382,8 +395,4 @@ class _DesignScreenState extends State<DesignScreen> {
     await SharePlus.instance.share(
         ShareParams(files: [XFile(f.path)], subject: 'Návrh konfigurace'));
   }
-}
-
-extension<T> on T {
-  R let<R>(R Function(T) f) => f(this);
 }

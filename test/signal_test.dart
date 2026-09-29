@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:audio_scanner/dsp/band_filter.dart';
 import 'package:audio_scanner/dsp/impulse_response.dart';
 import 'package:audio_scanner/export/frd.dart';
 import 'package:audio_scanner/dsp/octave_bands.dart';
@@ -248,6 +249,109 @@ void main() {
       final gated = ir.gated(window: const Duration(milliseconds: 5));
       // A 5 ms window cannot resolve below about 200 Hz.
       expect(gated.gatedResponseValidAbove, closeTo(200, 5));
+    });
+  });
+
+  group('decay per band', () {
+    /// Noise decaying with one RT60 below [splitHz] and another above it.
+    ImpulseResponse twoBandDecay({
+      required double lowRt60,
+      required double highRt60,
+      double splitHz = 400,
+      double rate = 48000,
+      int length = 48000,
+    }) {
+      final rnd = math.Random(5);
+      final noise = Float64List(length);
+      for (var i = 0; i < length; i++) {
+        noise[i] = rnd.nextDouble() * 2 - 1;
+      }
+      final base = ImpulseResponse(samples: noise, sampleRate: rate);
+      // Split the noise into the two halves of the spectrum, decay each.
+      final low = bandLimit(base, centerHz: splitHz / 4, octaves: 4);
+      final high = bandLimit(base, centerHz: splitHz * 4, octaves: 4);
+      final out = Float64List(length);
+      final tauLow = lowRt60 / (3 * math.ln10);
+      final tauHigh = highRt60 / (3 * math.ln10);
+      for (var i = 0; i < length; i++) {
+        final t = i / rate;
+        out[i] = low.samples[i] * math.exp(-t / tauLow) +
+            high.samples[i] * math.exp(-t / tauHigh);
+      }
+      out[0] = 1.0;
+      return ImpulseResponse(samples: out, sampleRate: rate);
+    }
+
+    test('band limiting keeps the band and kills two octaves away', () {
+      final rnd = math.Random(9);
+      final noise = Float64List(16384);
+      for (var i = 0; i < noise.length; i++) {
+        noise[i] = rnd.nextDouble() * 2 - 1;
+      }
+      final band = bandLimit(
+          ImpulseResponse(samples: noise, sampleRate: 48000),
+          centerHz: 1000);
+      final (freqs, levels) = band.frequencyResponse(fftSize: 16384);
+      int binOf(double hz) => (hz / (48000 / 16384)).round();
+      double around(double hz) {
+        var sum = 0.0;
+        var n = 0;
+        for (var k = binOf(hz * 0.95); k <= binOf(hz * 1.05); k++) {
+          sum += levels[k];
+          n++;
+        }
+        return sum / n;
+      }
+
+      expect(around(1000) - around(250), greaterThan(40));
+      expect(around(1000) - around(4000), greaterThan(40));
+      expect(freqs.length, 8193);
+    });
+
+    test('recovers a different RT60 in each band', () {
+      final ir = twoBandDecay(lowRt60: 0.8, highRt60: 0.3);
+      final bands = decayPerBand(ir, centers: [63, 125, 1000, 2000]);
+      final low = bands.firstWhere((b) => b.centerHz == 125);
+      final high = bands.firstWhere((b) => b.centerHz == 2000);
+      expect(low.t20, isNotNull);
+      expect(high.t20, isNotNull);
+      expect(low.t20!.inMilliseconds / 1000, closeTo(0.8, 0.12));
+      expect(high.t20!.inMilliseconds / 1000, closeTo(0.3, 0.08));
+    });
+
+    test('EDT equals T20 on an ideal exponential decay', () {
+      final rnd = math.Random(11);
+      final s = Float64List(48000);
+      final tau = 0.6 / (3 * math.ln10);
+      for (var i = 0; i < s.length; i++) {
+        s[i] = (rnd.nextDouble() * 2 - 1) * math.exp(-i / 48000 / tau);
+      }
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final edt = ir.rt60(decayDb: 10, startDb: 0)!.inMilliseconds;
+      final t20 = ir.rt60(decayDb: 20)!.inMilliseconds;
+      expect((edt - t20).abs(), lessThan(100));
+    });
+
+    test('clarity is the early-to-late energy ratio', () {
+      final s = Float64List(48000);
+      s[100] = 1.0;
+      s[100 + 2880] = math.sqrt(0.5); // 60 ms later, half the energy
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      expect(ir.clarityDb(const Duration(milliseconds: 50)), closeTo(3.01, 0.05));
+      // With the reflection inside the early window there is no late energy.
+      expect(ir.clarityDb(const Duration(milliseconds: 80)), isNull);
+    });
+
+    test('mid-band RT60 averages 125–500 Hz and ignores the rest', () {
+      const bands = [
+        BandDecay(centerHz: 63, t20: Duration(seconds: 5)),
+        BandDecay(centerHz: 125, t20: Duration(milliseconds: 600)),
+        BandDecay(centerHz: 250),
+        BandDecay(centerHz: 500, t20: Duration(milliseconds: 400)),
+        BandDecay(centerHz: 4000, t20: Duration(milliseconds: 100)),
+      ];
+      expect(midBandRt60(bands), closeTo(0.5, 1e-9));
+      expect(midBandRt60(const [BandDecay(centerHz: 250)]), isNull);
     });
   });
 

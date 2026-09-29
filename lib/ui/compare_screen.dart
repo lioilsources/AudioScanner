@@ -69,7 +69,7 @@ class _CompareScreenState extends State<CompareScreen> {
   List<Session> get _choices {
     final current = widget.state.session;
     if (_sessions.isNotEmpty) return _sessions;
-    return [if (current != null) current];
+    return [?current];
   }
 
   Future<void> _load() async {

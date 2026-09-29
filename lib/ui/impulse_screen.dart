@@ -13,7 +13,9 @@ import '../store/session_store.dart';
 import '../analysis/decay_analysis.dart';
 import 'compare_screen.dart';
 import 'widgets/response_chart.dart';
+import 'widgets/spectrogram_view.dart';
 import 'widgets/time_chart.dart';
+import '../dsp/spectrogram.dart';
 
 /// Phase 3: record a sweep, deconvolve it, read the room's timing.
 ///
@@ -169,6 +171,8 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                 _Results(ir: ir, gate: _gate, distortion: s.distortion),
                 const SizedBox(height: 12),
                 _BandTable(decay: s.decayAnalysis),
+                const SizedBox(height: 12),
+                _SpectrogramCard(ir: ir),
               ],
             ],
           ),
@@ -384,6 +388,63 @@ class _TimeCardState extends State<_TimeCard> {
               'přímý zvuk.',
               style: t.textTheme.bodySmall,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Which frequencies ring on, shown rather than tabulated.
+class _SpectrogramCard extends StatefulWidget {
+  const _SpectrogramCard({required this.ir});
+
+  final ImpulseResponse ir;
+
+  @override
+  State<_SpectrogramCard> createState() => _SpectrogramCardState();
+}
+
+class _SpectrogramCardState extends State<_SpectrogramCard> {
+  Spectrogram? _spectrogram;
+  ImpulseResponse? _of;
+  bool _open = false;
+
+  Spectrogram _get() {
+    if (_spectrogram != null && identical(_of, widget.ir)) return _spectrogram!;
+    _of = widget.ir;
+    return _spectrogram = Spectrogram.of(widget.ir);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Spektrogram', style: t.textTheme.titleMedium),
+                TextButton(
+                  onPressed: () => setState(() => _open = !_open),
+                  child: Text(_open ? 'Skrýt' : 'Zobrazit'),
+                ),
+              ],
+            ),
+            if (_open) ...[
+              SizedBox(height: 200, child: SpectrogramView(spectrogram: _get())),
+              const SizedBox(height: 6),
+              Text(
+                'Čas v ms od přímého zvuku, frekvence nahoru, barva je hladina '
+                'do −60 dB. Vodorovný pruh, který přežije ostatní, je mód; '
+                'tabulka nad tím říká totéž číslem.',
+                style: t.textTheme.bodySmall,
+              ),
+            ],
           ],
         ),
       ),

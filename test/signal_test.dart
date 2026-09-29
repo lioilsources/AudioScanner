@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:audio_scanner/dsp/band_filter.dart';
 import 'package:audio_scanner/dsp/distortion.dart';
 import 'package:audio_scanner/dsp/impulse_response.dart';
+import 'package:audio_scanner/dsp/spectrogram.dart';
 import 'package:audio_scanner/export/frd.dart';
 import 'package:audio_scanner/dsp/octave_bands.dart';
 import 'package:audio_scanner/dsp/spectrum.dart';
@@ -427,6 +428,28 @@ void main() {
       ];
       expect(midBandRt60(bands), closeTo(0.5, 1e-9));
       expect(midBandRt60(const [BandDecay(centerHz: 250)]), isNull);
+    });
+  });
+
+  group('spectrogram', () {
+    test('a mode that rings on shows as a streak the rest of the band lacks',
+        () {
+      // 100 Hz decaying slowly, 2 kHz decaying fast, both from t = 0.
+      final s = Float64List(48000);
+      for (var i = 0; i < s.length; i++) {
+        final t = i / 48000;
+        s[i] = math.sin(2 * math.pi * 100 * t) * math.exp(-t / 0.3) +
+            math.sin(2 * math.pi * 2000 * t) * math.exp(-t / 0.02);
+      }
+      s[0] = 2.0;
+      final sg = Spectrogram.of(ImpulseResponse(samples: s, sampleRate: 48000));
+      expect(sg.timesMs.first, lessThan(0));
+      expect(sg.timesMs.last, greaterThan(400));
+      // At 300 ms the 100 Hz mode is still well above the 2 kHz tone.
+      expect(sg.levelAt(300, 100) - sg.levelAt(300, 2000), greaterThan(30));
+      // …and at 5 ms both are present.
+      expect(sg.levelAt(5, 2000), greaterThan(-30));
+      expect(sg.levelAt(5, 100), greaterThan(-30));
     });
   });
 

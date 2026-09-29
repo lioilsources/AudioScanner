@@ -279,9 +279,16 @@ class AppState extends ChangeNotifier {
   /// is not — channel measurements are taken from the seat and the design
   /// report does not need to know where the seat is in AR space, only that
   /// every channel was measured from the same place.
+  ///
+  /// With [replace] the channel's earlier points of the same kind are
+  /// dropped first: a re-measurement after moving a speaker must not be
+  /// averaged with the response the speaker no longer has. Without it the
+  /// new point is one more sweep to average, which is the way to beat the
+  /// noise of a single take.
   Future<Measurement?> addSweepMeasurement({
     required String channel,
     bool afterEq = false,
+    bool replace = false,
     Duration gate = const Duration(milliseconds: 5),
   }) async {
     final ir = _impulseResponse;
@@ -290,11 +297,32 @@ class AppState extends ChangeNotifier {
         await beginSession(
             name: 'Kanály', signal: ExcitationSignal.externalSweep);
 
+    if (replace) {
+      final stale = session.points
+          .where((p) => p.channel == channel && p.afterEq == afterEq)
+          .toList();
+      for (final p in stale) {
+        session.points.remove(p);
+        final file = p.impulse?.file;
+        if (file != null) {
+          _impulseCache.remove(file);
+          await _store?.deleteImpulse(file);
+        }
+      }
+    }
+
     final room = ir.gated(window: const Duration(seconds: 1));
     final (freqs, levels) = room.frequencyResponse();
     final bands = bandMeansFromTransferDb(levels, binHz: freqs[1]);
 
-    final id = 'p${session.points.length + 1}';
+    // Ids stay unique after removals: count up from the largest seen, not
+    // from the current length.
+    var maxId = 0;
+    for (final p in session.points) {
+      final n = int.tryParse(p.id.replaceFirst('p', ''));
+      if (n != null && n > maxId) maxId = n;
+    }
+    final id = 'p${maxId + 1}';
     String? file;
     final store = _store;
     if (store != null) {

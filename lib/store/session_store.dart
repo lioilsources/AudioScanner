@@ -99,6 +99,11 @@ class SessionStore {
     return name;
   }
 
+  Future<void> deleteImpulse(String name) async {
+    final f = File('${directory.path}/$name');
+    if (f.existsSync()) await f.delete();
+  }
+
   /// Reads a sidecar written by [writeImpulse]; null when it is missing or
   /// not one of ours.
   Future<ImpulseResponse?> readImpulse(String name) async {

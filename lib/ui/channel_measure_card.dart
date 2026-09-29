@@ -27,6 +27,7 @@ class ChannelMeasureCard extends StatefulWidget {
 
 class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
   Channel? _recording;
+  bool _replace = false;
   bool _afterEq = false;
   double _seconds = 10;
 
@@ -112,23 +113,54 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
           ? 'Nahrávám ${s.recordedSeconds.toStringAsFixed(1)} s — teď pusť sweep'
           : summary == null
               ? (latest == null ? 'nezměřeno' : 'změřeno šumem')
-              : 'přímý zvuk za ${summary.arrivalMs.toStringAsFixed(1)} ms'
+              : '${_takes(ch)}× · přímý zvuk za ${summary.arrivalMs.toStringAsFixed(1)} ms'
                   '${summary.rt20 == null ? '' : ', T20 ${(summary.rt20!.inMilliseconds / 1000).toStringAsFixed(2)} s'}'),
       trailing: recordingThis
           ? FilledButton(
               onPressed: () => _finish(ch),
               child: const Text('Hotovo'),
             )
-          : OutlinedButton(
-              onPressed: _recording == null && s.listening ? () => _start(ch) : null,
-              child: Text(latest == null ? 'Změřit' : 'Znovu'),
-            ),
+          : latest == null
+              ? OutlinedButton(
+                  onPressed: _recording == null && s.listening
+                      ? () => _start(ch, replace: false)
+                      : null,
+                  child: const Text('Změřit'),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Add: one more take to average, for a quieter estimate.
+                    // Again: the speaker moved, the old take is history.
+                    TextButton(
+                      onPressed: _recording == null && s.listening
+                          ? () => _start(ch, replace: false)
+                          : null,
+                      child: const Text('Přidat'),
+                    ),
+                    TextButton(
+                      onPressed: _recording == null && s.listening
+                          ? () => _start(ch, replace: true)
+                          : null,
+                      child: const Text('Znovu'),
+                    ),
+                  ],
+                ),
     );
   }
 
-  void _start(Channel ch) {
+  int _takes(Channel ch) =>
+      widget.state.session?.points
+          .where((p) => p.channel == ch.name && p.afterEq == _afterEq)
+          .length ??
+      0;
+
+  void _start(Channel ch, {required bool replace}) {
     widget.state.startSweepRecording();
-    setState(() => _recording = ch);
+    setState(() {
+      _recording = ch;
+      _replace = replace;
+    });
   }
 
   Future<void> _finish(Channel ch) async {
@@ -136,6 +168,7 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
     final ir = s.finishSweepRecording(_sweep);
     setState(() => _recording = null);
     if (ir == null) return;
-    await s.addSweepMeasurement(channel: ch.name, afterEq: _afterEq);
+    await s.addSweepMeasurement(
+        channel: ch.name, afterEq: _afterEq, replace: _replace);
   }
 }

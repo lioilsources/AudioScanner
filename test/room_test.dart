@@ -473,7 +473,7 @@ void main() {
       expect(trim(Channel.center), 0);
     });
 
-    test('the latest pre-EQ point per channel wins, verification passes do not',
+    test('repeated sweeps of a channel average; verification passes stay out',
         () {
       final older = seatPoint('p1', channel: 'frontLeft', hump: 8);
       final newer = Measurement(
@@ -488,7 +488,7 @@ void main() {
         id: 'p3',
         position: Vec3.zero,
         timestamp: DateTime.utc(2026, 10, 1),
-        bandsDb: seatPoint('x', hump: 12).bandsDb,
+        bandsDb: seatPoint('x', hump: 20).bandsDb,
         rmsDbfs: -30,
         channel: 'frontLeft',
         afterEq: true,
@@ -502,8 +502,12 @@ void main() {
       );
       final fl = report.config.channels
           .firstWhere((c) => c.channel == Channel.frontLeft);
-      // The newer flat point drives the EQ: nothing to cut at 63 Hz.
-      expect(fl.eq!.gainsDb[fl.eq!.bands.indexOf(63)], closeTo(0, 1.5));
+      final cut = fl.eq!.gainsDb[fl.eq!.bands.indexOf(63)];
+      // Energy mean of a +8 dB hump and a flat point is a hump of about
+      // 4.6 dB: the cut lands between the two, and the +20 dB verification
+      // point plays no part in it.
+      expect(cut, lessThan(-3));
+      expect(cut, greaterThan(-6));
     });
 
     test('the rendered sheet names the Schroeder limit rather than hiding it',

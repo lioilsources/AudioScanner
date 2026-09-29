@@ -9,7 +9,9 @@ import '../room/room_capture.dart';
 import '../room/room_geometry.dart';
 import '../room/speaker_layout.dart';
 import '../store/session_store.dart';
+import '../export/avr_config.dart';
 import 'channel_measure_card.dart';
+import 'widgets/eq_preview.dart';
 
 /// Phase 5: put the geometry and the measurements together and say what to do.
 class DesignScreen extends StatefulWidget {
@@ -33,6 +35,20 @@ class _DesignScreenState extends State<DesignScreen> {
   double _height = 2.5;
 
   DesignReport? _report;
+
+  /// Target used when no session exists yet to hold one.
+  TargetCurve _target = const TargetCurve();
+
+  void _setTarget(TargetCurve t) {
+    final session = widget.state.session;
+    setState(() {
+      _target = t;
+      session?.target = t;
+    });
+    if (session != null) widget.store?.save(session);
+    // The report is cheap; keep it in step with the slider.
+    if (_report != null) _build();
+  }
 
   @override
   void initState() {
@@ -92,6 +108,11 @@ class _DesignScreenState extends State<DesignScreen> {
                   s.channel,
               ],
             ),
+          ),
+          const SizedBox(height: 12),
+          TargetCurveEditor(
+            target: widget.state.session?.target ?? _target,
+            onChanged: _setTarget,
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
@@ -240,6 +261,24 @@ class _DesignScreenState extends State<DesignScreen> {
           trailing: Text('${c.flatnessDb.toStringAsFixed(1)} dB'),
         ),
       const SizedBox(height: 16),
+      Text('EQ: změřeno, cíl, předpověď', style: t.textTheme.titleLarge),
+      Text(
+        'Předpověď je změřená odezva plus model patnácti pásem přijímače. '
+        'Po zadání EQ změř kanál znovu s přepínačem „po EQ", aby bylo vidět, '
+        'jak blízko model byl.',
+        style: t.textTheme.bodySmall,
+      ),
+      const SizedBox(height: 8),
+      for (final c in r.config.channels)
+        if (c.eq != null && c.eq!.basisCenters.isNotEmpty)
+          EqPreview(
+            label: c.channel.label,
+            eq: c.eq!,
+            verification: widget.state.session
+                ?.latestFor(c.channel.name, afterEq: true),
+            maxEqHz: math.min(300, r.room.schroederFrequency),
+          ),
+      const SizedBox(height: 16),
       Text('Konfigurace přijímače', style: t.textTheme.titleLarge),
       if (r.config.channels.every((c) => c.eq == null))
         Text(
@@ -287,6 +326,7 @@ class _DesignScreenState extends State<DesignScreen> {
         speakers: _referenceLayout(room, seat),
         measurements: session?.points ?? const [],
         forward: math.pi,
+        target: session?.target ?? _target,
       );
     });
   }

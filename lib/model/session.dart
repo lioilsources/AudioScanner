@@ -1,3 +1,4 @@
+import '../export/avr_config.dart';
 import 'measurement.dart';
 
 /// How the room was excited while a session was recorded.
@@ -34,7 +35,12 @@ class Session {
     this.calibrationOffsetDb = 0,
     List<Measurement>? points,
     this.note,
+    this.target = const TargetCurve(),
   }) : points = points ?? [];
+
+  /// The response the EQ aims for. Mutable: it is the one thing the user
+  /// tunes by ear after the measurement is done.
+  TargetCurve target;
 
   final String id;
   final String name;
@@ -86,6 +92,7 @@ class Session {
         'calibrationOffsetDb': calibrationOffsetDb,
         'points': [for (final p in points) p.toJson()],
         if (note != null) 'note': note,
+        'target': target.toJson(),
         'format': 'audioscanner.session/1',
       };
 
@@ -105,5 +112,8 @@ class Session {
             Measurement.fromJson(p as Map<String, dynamic>),
         ],
         note: j['note'] as String?,
+        target: j['target'] == null
+            ? const TargetCurve()
+            : TargetCurve.fromJson(j['target'] as Map<String, dynamic>),
       );
 }

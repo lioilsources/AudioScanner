@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'analysis/decay_analysis.dart';
 import 'ar/ar_tracking.dart';
 import 'audio/audio_capture.dart';
+import 'dsp/distortion.dart';
 import 'dsp/impulse_response.dart';
 import 'dsp/octave_bands.dart';
 import 'dsp/spectrum.dart';
@@ -214,8 +215,24 @@ class AppState extends ChangeNotifier {
     }
     _impulseResponse =
         deconvolveSweep(recording: List<double>.of(_recording), sweep: sweep);
+    _lastSweep = sweep;
     notifyListeners();
     return _impulseResponse;
+  }
+
+  LogSweep? _lastSweep;
+  List<HarmonicLevel>? _distortion;
+  ImpulseResponse? _distortionOf;
+
+  /// Harmonic distortion of the current response, computed on first use.
+  /// Empty when the response did not come from a sweep taken in this run.
+  List<HarmonicLevel> get distortion {
+    final ir = _impulseResponse;
+    final sweep = _lastSweep;
+    if (ir == null || sweep == null) return const [];
+    if (_distortion != null && identical(_distortionOf, ir)) return _distortion!;
+    _distortionOf = ir;
+    return _distortion = harmonicDistortion(ir, sweep);
   }
 
   DecayAnalysis? _decay;

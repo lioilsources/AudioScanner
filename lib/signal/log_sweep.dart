@@ -42,8 +42,11 @@ class LogSweep {
   double get _w1 => 2 * math.pi * startHz;
   double get _w2 => 2 * math.pi * endHz;
 
-  /// Sweep rate constant: T / ln(ω₂/ω₁).
-  double get _rate => (length / sampleRate) / math.log(_w2 / _w1);
+  /// Sweep rate constant in seconds: T / ln(f₂/f₁). The n-th harmonic of the
+  /// sweep deconvolves to an impulse this many times ln(n) seconds *before*
+  /// the linear one.
+  double get rate => (length / sampleRate) / math.log(_w2 / _w1);
+  double get _rate => rate;
 
   /// The excitation signal itself.
   Float64List generate() {
@@ -60,17 +63,29 @@ class LogSweep {
 
   /// The matched inverse filter.
   ///
-  /// Time-reversed sweep with an envelope falling 6 dB per octave, which undoes
-  /// the sweep's pink energy distribution. Without the envelope the
-  /// deconvolution comes out tilted and every response reads bass-heavy.
+  /// Time-reversed sweep with an amplitude envelope that *rises* 6 dB per
+  /// octave in frequency — which, since the reversed filter runs from high
+  /// frequency to low, is an envelope that decays along the filter. The
+  /// sweep spends its time in inverse proportion to frequency, so its
+  /// spectrum is pink (−3 dB/octave in magnitude); the reversed copy is pink
+  /// again, and the product would tilt −6 dB/octave. The envelope's +6 dB
+  /// per octave cancels exactly that and the deconvolution comes out flat.
+  ///
+  /// The direction of the envelope is the whole point. With the sign the
+  /// other way the product tilts −12 dB per octave, every response reads
+  /// bass-heavy, and a reflection at 5 ms vanishes into a low-frequency blob
+  /// that rings for twenty. The flat-chain test pins this down.
   Float64List inverseFilter() {
     final n = length;
     final sweep = generate();
     final out = Float64List(n);
     final l = _rate;
+    final total = (n - 1) / sampleRate;
     for (var i = 0; i < n; i++) {
-      final tRev = (n - 1 - i) / sampleRate;
-      out[i] = sweep[n - 1 - i] * math.exp(-tRev / l);
+      final tOrig = (n - 1 - i) / sampleRate;
+      // exp(+t/L), normalised so the loudest sample of the filter stays at
+      // the sweep's own amplitude.
+      out[i] = sweep[n - 1 - i] * math.exp((tOrig - total) / l);
     }
     return out;
   }

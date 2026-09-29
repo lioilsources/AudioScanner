@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:audio_scanner/dsp/band_filter.dart';
+import 'package:audio_scanner/dsp/distortion.dart';
 import 'package:audio_scanner/dsp/impulse_response.dart';
 import 'package:audio_scanner/export/frd.dart';
 import 'package:audio_scanner/dsp/octave_bands.dart';
@@ -84,6 +85,30 @@ void main() {
       expect(ir.samples[ir.directSoundIndex].abs(), closeTo(1.0, 0.02));
     });
 
+    test('a flat chain deconvolves to a flat response', () {
+      // Regression: the inverse filter's envelope once ran the wrong way and
+      // every response tilted −12 dB per octave. A sweep through nothing must
+      // come back flat within a dB across the band the sweep covers.
+      final x = sweep.generate();
+      final recorded = Float64List(x.length + 4800);
+      recorded.setRange(2400, 2400 + x.length, x);
+      final ir = deconvolveSweep(recording: recorded, sweep: sweep);
+      final gated = ir.gated(
+          window: const Duration(milliseconds: 40),
+          preRoll: const Duration(milliseconds: 20));
+      final (freqs, levels) = gated.frequencyResponse(fftSize: 65536);
+      final binHz = freqs[1];
+      final at1k = levels[(1000 / binHz).round()];
+      for (final hz in [100.0, 200, 400, 800, 1600, 3200, 6400]) {
+        expect(levels[(hz / binHz).round()], closeTo(at1k, 1.0),
+            reason: 'at $hz Hz');
+      }
+      // The absolute figure is not zero: normalisation is to the impulse's
+      // peak in time, and a band-limited impulse with a peak of one has a
+      // magnitude that depends on the sweep's bandwidth. Levels here are
+      // relative, and everything downstream anchors at 1 kHz.
+    });
+
     test('concentrates the energy into a couple of milliseconds', () {
       // A band-limited sweep cannot produce a mathematical delta — the result
       // is a bandpass impulse that rings, and for 50 Hz–8 kHz the first
@@ -128,6 +153,56 @@ void main() {
       expect(ir.samples[direct].abs(), closeTo(1.0, 0.1));
       // The echo is present, at half the level, exactly where it was planted.
       expect(ir.samples[echo].abs(), closeTo(0.5, 0.12));
+    });
+
+    test('harmonics land L·ln(n) before the direct sound and read their level',
+        () {
+      // y = x + 0.1·x²: with x = A·sin θ the second harmonic is
+      // 0.1·A²/2·cos 2θ, so HD2 = 0.05·A / 1 = 0.025 for A = 0.5 → −32 dB.
+      // No third harmonic at all.
+      final x = sweep.generate();
+      const delay = 2400;
+      final recorded = Float64List(x.length + delay);
+      for (var i = 0; i < x.length; i++) {
+        recorded[i + delay] = x[i] + 0.1 * x[i] * x[i];
+      }
+      final ir = deconvolveSweep(recording: recorded, sweep: sweep);
+      expect(ir.negativeTime, isNotNull);
+
+      // The second-harmonic impulse sits L·ln 2 ahead of the linear one.
+      final advance = (sweep.rate * math.ln2 * 48000).round();
+      var peakAt = 0;
+      var peak = 0.0;
+      for (var i = -advance - 200; i < -advance + 200; i++) {
+        final a = ir.sampleAt(ir.directSoundIndex + i).abs();
+        if (a > peak) {
+          peak = a;
+          peakAt = i;
+        }
+      }
+      expect(peakAt, closeTo(-advance, 3));
+
+      final hd = harmonicDistortion(ir, sweep);
+      final hd2 = hd.firstWhere((h) => h.order == 2);
+      final hd3 = hd.firstWhere((h) => h.order == 3);
+      expect(hd2.at(1000), closeTo(-32, 3));
+      expect(hd2.at(300), closeTo(-32, 3));
+      expect(hd3.at(1000), lessThan(-50));
+    });
+
+    test('a clean chain reads no distortion', () {
+      final x = sweep.generate();
+      final recorded = Float64List(x.length + 2400);
+      recorded.setRange(2400, 2400 + x.length, x);
+      final ir = deconvolveSweep(recording: recorded, sweep: sweep);
+      for (final h in harmonicDistortion(ir, sweep)) {
+        expect(h.at(1000), lessThan(-60));
+      }
+    });
+
+    test('a response that is not from a sweep has nothing to say', () {
+      final ir = ImpulseResponse(samples: Float64List(100)..[10] = 1, sampleRate: 48000);
+      expect(harmonicDistortion(ir, sweep), isEmpty);
     });
 
     test('a delayed, attenuated recording puts the impulse at that delay', () {

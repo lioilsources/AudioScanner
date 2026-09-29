@@ -21,13 +21,13 @@ ImpulseResponse deconvolveSweep({
   required LogSweep sweep,
 }) {
   final inverse = sweep.inverseFilter();
-  final raw = convolution(recording, inverse);
+  final raw = _linearConvolution(recording, inverse);
 
   // Normalise against the chain's own answer: sweep ⊛ inverse is the impulse
   // this method would produce from a perfect, unity-gain measurement. Dividing
   // by its peak makes the direct sound read 0 dB for a flat chain, so levels
   // between points are comparable.
-  final reference = convolution(sweep.generate(), inverse);
+  final reference = _linearConvolution(sweep.generate(), inverse);
   final refPeak = _peakMagnitude(reference);
 
   // A linear convolution with a time-reversed filter puts time zero at index
@@ -41,12 +41,38 @@ ImpulseResponse deconvolveSweep({
   final offset = inverse.length - 1;
   final length = math.max(0, raw.length - offset);
   final out = Float64List(length);
+  // Kept rather than thrown away: the harmonics are the distortion
+  // measurement, and the only way to tell an overdriven take from a room
+  // with an extra reflection.
+  final negative = Float64List(offset);
   if (refPeak > 0) {
     for (var i = 0; i < length; i++) {
       out[i] = raw[offset + i] / refPeak;
     }
+    for (var i = 0; i < offset; i++) {
+      negative[i] = raw[i] / refPeak;
+    }
   }
-  return ImpulseResponse(samples: out, sampleRate: sweep.sampleRate);
+  return ImpulseResponse(
+    samples: out,
+    sampleRate: sweep.sampleRate,
+    negativeTime: negative,
+  );
+}
+
+/// Full linear convolution, a.length + b.length − 1 samples.
+///
+/// fftea's `convolution` keeps only the first max(a, b) samples, which for a
+/// recording barely longer than the sweep leaves an impulse response a few
+/// samples long and silently drops the decay the RT60 needs.
+Float64List _linearConvolution(List<double> a, List<double> b) {
+  final full = a.length + b.length - 1;
+  var n = 1;
+  while (n < full) {
+    n *= 2;
+  }
+  final out = circularConvolution(a, b, n);
+  return Float64List.sublistView(out, 0, full);
 }
 
 double _peakMagnitude(List<double> x) {
@@ -60,10 +86,30 @@ double _peakMagnitude(List<double> x) {
 
 /// An impulse response and the measurements taken from it.
 class ImpulseResponse {
-  ImpulseResponse({required this.samples, required this.sampleRate});
+  ImpulseResponse({
+    required this.samples,
+    required this.sampleRate,
+    this.negativeTime,
+  });
 
   final Float64List samples;
   final double sampleRate;
+
+  /// Farina's negative-time region: what the deconvolution produced *before*
+  /// the start of the recording, where the harmonic distortion products of
+  /// a log sweep land. Index i is sample i − length in the extended timeline,
+  /// i.e. the last element is one sample before [samples] begins. Null for a
+  /// response that did not come from a sweep.
+  final Float64List? negativeTime;
+
+  /// Sample at an extended index that may be negative (see [negativeTime]).
+  double sampleAt(int i) {
+    if (i >= 0) return i < samples.length ? samples[i] : 0;
+    final neg = negativeTime;
+    if (neg == null) return 0;
+    final j = neg.length + i;
+    return j >= 0 ? neg[j] : 0;
+  }
 
   /// Index of the direct sound — the largest peak.
   ///

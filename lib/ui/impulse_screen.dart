@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../analysis/response_analysis.dart';
 import '../app_state.dart';
+import '../dsp/distortion.dart';
 import '../dsp/impulse_response.dart';
 import '../export/frd.dart';
 import '../signal/log_sweep.dart';
@@ -165,7 +166,7 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                 const SizedBox(height: 12),
                 _TimeCard(ir: ir, gate: _gate),
                 const SizedBox(height: 12),
-                _Results(ir: ir, gate: _gate),
+                _Results(ir: ir, gate: _gate, distortion: s.distortion),
                 const SizedBox(height: 12),
                 _BandTable(decay: s.decayAnalysis),
               ],
@@ -462,10 +463,19 @@ class _BandTable extends StatelessWidget {
 }
 
 class _Results extends StatelessWidget {
-  const _Results({required this.ir, required this.gate});
+  const _Results({
+    required this.ir,
+    required this.gate,
+    this.distortion = const [],
+  });
 
   final ImpulseResponse ir;
   final Duration gate;
+  final List<HarmonicLevel> distortion;
+
+  /// Above this the take was too hot or the speaker is at its limit — and a
+  /// distortion tail looks exactly like a reflection in the impulse.
+  static const _hotDb = -30.0;
 
   @override
   Widget build(BuildContext context) {
@@ -517,6 +527,7 @@ class _Results extends StatelessWidget {
               'Pod tím okno neuvidí ani jednu periodu — křivka tam je '
                   'artefakt okna, ne místnosti.',
             ),
+            if (distortion.isNotEmpty) ..._distortionRows(context),
             const SizedBox(height: 12),
             SizedBox(height: 120, child: _DecayChart(ir: ir)),
             Text('Schroederova křivka doznívání',
@@ -525,6 +536,42 @@ class _Results extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+extension on _Results {
+  List<Widget> _distortionRows(BuildContext context) {
+    String fmt(double v) => v.isNaN ? '—' : '${v.toStringAsFixed(0)} dB';
+    final rows = <Widget>[];
+    var worst = -160.0;
+    for (final h in distortion) {
+      final at100 = h.at(100);
+      final at1k = h.at(1000);
+      for (final v in [at100, at1k]) {
+        if (!v.isNaN && v > worst) worst = v;
+      }
+      rows.add(_Row(
+        'HD${h.order} při 100 Hz / 1 kHz',
+        '${fmt(at100)} / ${fmt(at1k)}',
+        h.order == 2
+            ? 'Harmonické leží v záporném čase Farinovy dekonvoluce; tady se '
+                'z něj čtou místo zahazování. −40 dB je 1 %.'
+            : 'Třetí harmonická roste s přebuzením rychleji než druhá.',
+      ));
+    }
+    if (worst > _Results._hotDb) {
+      rows.add(Card(
+        color: Theme.of(context).colorScheme.errorContainer,
+        child: const ListTile(
+          leading: Icon(Icons.warning_amber),
+          title: Text('Zkreslení nad −30 dB'),
+          subtitle: Text('Buď je sweep příliš nahlas, nebo je repro na hraně. '
+              'Ohon zkreslení vypadá v impulzu jako odraz — uber hlasitost a '
+              'změř znovu, než něčemu uvěříš.'),
+        ),
+      ));
+    }
+    return rows;
   }
 }
 

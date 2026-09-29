@@ -45,6 +45,24 @@ class AppState extends ChangeNotifier {
   Spectrum? _spectrum;
   Spectrum? get spectrum => _spectrum;
 
+  /// Peak hold and max/min traces of the live analyser.
+  final PeakHold hold = PeakHold(OctaveBands.all.length);
+  DateTime? _lastBlockAt;
+
+  /// While frozen the analyser display stops updating; capture, sweep
+  /// recording and averaging carry on underneath.
+  bool _frozen = false;
+  bool get frozen => _frozen;
+  void setFrozen(bool v) {
+    _frozen = v;
+    notifyListeners();
+  }
+
+  void resetHold() {
+    hold.reset();
+    notifyListeners();
+  }
+
   CaptureStatus? _captureStatus;
   CaptureStatus? get captureStatus => _captureStatus;
 
@@ -262,7 +280,12 @@ class AppState extends ChangeNotifier {
 
     for (final frame in assembler.add(samples)) {
       final s = analyzer.analyze(frame);
-      _spectrum = s;
+      if (!_frozen) {
+        _spectrum = s;
+        final now = DateTime.now();
+        hold.update(s.bandsDb, _lastBlockAt == null ? Duration.zero : now.difference(_lastBlockAt!));
+        _lastBlockAt = now;
+      }
       final avg = _averager;
       if (avg != null) {
         avg.add(s.bandsDb);
@@ -299,15 +322,26 @@ class AppState extends ChangeNotifier {
   /// Refuses while tracking is not normal: a point with a wrong position is
   /// worse than a missing one, because the heatmap will smear it across
   /// everything nearby and there is no way to tell afterwards.
+  ///
+  /// [requirePose] false stores the point at the origin when tracking is not
+  /// running — for a snapshot from the analyser, which wants the spectrum
+  /// kept and has no map to be wrong on. Such a point is a snapshot, not a
+  /// walk point, and is tagged with a note saying so.
   Future<Measurement?> measureHere({
     Duration duration = const Duration(seconds: 3),
     String? note,
+    bool requirePose = true,
   }) async {
-    final session = _session;
+    final session = _session ??
+        (requirePose
+            ? null
+            : await beginSession(
+                name: 'Snímky', signal: ExcitationSignal.externalPinkNoise));
     if (session == null || !_listening) return null;
 
     final p = _pose;
-    if (p == null || !p.quality.usableForMeasurement) {
+    final poseOk = p != null && p.quality.usableForMeasurement;
+    if (requirePose && !poseOk) {
       _error = p?.hint ??
           'Sledování polohy není spolehlivé — bod by seděl jinde, než stojíš.';
       notifyListeners();
@@ -331,14 +365,14 @@ class AppState extends ChangeNotifier {
 
     final point = Measurement(
       id: 'p${session.points.length + 1}',
-      position: _pose?.position ?? p.position,
+      position: poseOk ? (_pose?.position ?? p.position) : Vec3.zero,
       timestamp: DateTime.now(),
       bandsDb: avg.meanDb,
       rmsDbfs: _averagedRmsCount == 0
           ? -160
           : 10 * math.log(_averagedRms / _averagedRmsCount) / math.ln10,
-      arAccuracy: p.quality.name,
-      note: note,
+      arAccuracy: poseOk ? p.quality.name : null,
+      note: note ?? (poseOk ? null : 'snímek z analyzátoru, bez polohy'),
     );
     session.points.add(point);
     await _store?.save(session);

@@ -23,6 +23,32 @@ class RtaScreen extends StatefulWidget {
 }
 
 class _RtaScreenState extends State<RtaScreen> {
+  bool _showPeak = true;
+  bool _showEnvelope = false;
+  bool _saving = false;
+
+  Future<void> _saveSnapshot() async {
+    final s = widget.state;
+    setState(() => _saving = true);
+    try {
+      final wasFrozen = s.frozen;
+      // A snapshot averages three seconds of live audio, so unfreeze the
+      // averager's source for the duration and put the display back after.
+      if (wasFrozen) s.setFrozen(false);
+      final point = await s.measureHere(requirePose: false);
+      if (wasFrozen) s.setFrozen(true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(point == null
+            ? (s.error ?? 'Snímek se neuložil.')
+            : 'Uloženo jako bod ${point.id}'
+                '${point.arAccuracy == null ? ' (bez polohy)' : ''}.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _importCalibration() async {
     final s = widget.state;
     final picked = await FilePicker.pickFiles(type: FileType.any);
@@ -109,14 +135,35 @@ class _RtaScreenState extends State<RtaScreen> {
                 onPressed: () =>
                     s.listening ? s.stopListening() : s.startListening(),
               ),
+              IconButton(
+                icon: Icon(s.frozen ? Icons.play_circle_outline : Icons.pause_circle_outline),
+                tooltip: s.frozen ? 'Rozmrazit' : 'Zmrazit',
+                onPressed: s.listening ? () => s.setFrozen(!s.frozen) : null,
+              ),
               PopupMenuButton<String>(
                 onSelected: (v) => switch (v) {
                   'cal' => _importCalibration(),
                   'nocal' => s.setCalibration(null),
                   'offset' => _editOffset(),
+                  'peak' => setState(() => _showPeak = !_showPeak),
+                  'env' => setState(() => _showEnvelope = !_showEnvelope),
+                  'reset' => s.resetHold(),
+                  'save' => _saveSnapshot(),
                   _ => null,
                 },
                 itemBuilder: (_) => [
+                  CheckedPopupMenuItem(
+                      value: 'peak', checked: _showPeak, child: const Text('Peak hold')),
+                  CheckedPopupMenuItem(
+                      value: 'env',
+                      checked: _showEnvelope,
+                      child: const Text('Stopy max / min')),
+                  const PopupMenuItem(value: 'reset', child: Text('Vynulovat stopy')),
+                  PopupMenuItem(
+                      value: 'save',
+                      enabled: s.listening && !_saving,
+                      child: const Text('Uložit jako bod (3 s)')),
+                  const PopupMenuDivider(),
                   const PopupMenuItem(
                       value: 'cal', child: Text('Kalibrace mikrofonu…')),
                   if (cal != null)
@@ -166,14 +213,26 @@ class _RtaScreenState extends State<RtaScreen> {
                           reference: s.referenceBands,
                           minDb: -90 + ctx.calibrationOffsetDb,
                           maxDb: -10 + ctx.calibrationOffsetDb,
+                          peak: _showPeak && s.hold.hasData
+                              ? ctx.correctedBands(s.hold.peakDb)
+                              : null,
+                          maxTrace: _showEnvelope && s.hold.hasData
+                              ? ctx.correctedBands(s.hold.maxDb)
+                              : null,
+                          minTrace: _showEnvelope && s.hold.hasData
+                              ? ctx.correctedBands(s.hold.minDb)
+                              : null,
                         ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  s.referenceBands == null
-                      ? 'Hladiny jsou relativní (dBFS). Obrys se objeví, až '
-                          'uložíš první bod — ten je referencí pro ostatní.'
-                      : 'Plné sloupce = tady. Obrys = referenční bod.',
+                  s.frozen
+                      ? 'Zmrazeno — mikrofon běží dál, jen se nekreslí.'
+                      : s.referenceBands == null
+                          ? 'Hladiny jsou relativní (dBFS). Obrys se objeví, až '
+                              'uložíš první bod — ten je referencí pro ostatní.'
+                          : 'Plné sloupce = tady. Obrys = referenční bod.'
+                              '${_showEnvelope ? ' Červená = max, zelená = min od vynulování.' : ''}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],

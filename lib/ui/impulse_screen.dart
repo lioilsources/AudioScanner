@@ -73,13 +73,13 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
           appBar: AppBar(
             title: const Text('Impulzní odezva'),
             actions: [
-              if ((s.session?.points.length ?? 0) >= 2)
+              if (widget.store != null || (s.session?.points.length ?? 0) >= 2)
                 IconButton(
                   icon: const Icon(Icons.compare_arrows),
                   tooltip: 'Srovnat body',
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => CompareScreen(state: s),
+                      builder: (_) => CompareScreen(state: s, store: widget.store),
                     ),
                   ),
                 ),

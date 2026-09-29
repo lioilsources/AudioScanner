@@ -130,3 +130,50 @@ class BandAverager {
     ];
   }
 }
+
+/// Peak hold, and the max and min traces, of a live band display.
+///
+/// [peakDb] is the classic falling peak: it jumps up to any new maximum and
+/// then sinks at [decayDbPerSecond], so a burst stays readable for a moment
+/// and then gets out of the way. [maxDb] and [minDb] never decay — they are
+/// the envelope of everything seen since [reset], which is what "how much
+/// does this band move while I walk" is asking.
+class PeakHold {
+  PeakHold(int bandCount, {this.decayDbPerSecond = 12})
+      : _peak = List<double>.filled(bandCount, -160),
+        _max = List<double>.filled(bandCount, -160),
+        _min = List<double>.filled(bandCount, double.infinity);
+
+  final double decayDbPerSecond;
+  final List<double> _peak;
+  final List<double> _max;
+  final List<double> _min;
+  bool _any = false;
+
+  /// Feeds one block; [dt] is the time since the previous one.
+  void update(List<double> bandsDb, Duration dt) {
+    final drop = decayDbPerSecond * dt.inMicroseconds / 1e6;
+    for (var i = 0; i < _peak.length; i++) {
+      final v = bandsDb[i];
+      _peak[i] = math.max(v, _peak[i] - drop);
+      if (v > _max[i]) _max[i] = v;
+      if (v < _min[i]) _min[i] = v;
+    }
+    _any = true;
+  }
+
+  void reset() {
+    for (var i = 0; i < _peak.length; i++) {
+      _peak[i] = -160;
+      _max[i] = -160;
+      _min[i] = double.infinity;
+    }
+    _any = false;
+  }
+
+  bool get hasData => _any;
+  List<double> get peakDb => List.unmodifiable(_peak);
+  List<double> get maxDb => List.unmodifiable(_max);
+  List<double> get minDb =>
+      [for (final v in _min) v.isFinite ? v : -160.0];
+}

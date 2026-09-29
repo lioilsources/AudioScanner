@@ -5,7 +5,9 @@ import '../app_state.dart';
 import '../dsp/impulse_response.dart';
 import '../dsp/octave_bands.dart';
 import '../model/measurement.dart';
+import '../model/session.dart';
 import '../room/speaker_layout.dart';
+import '../store/session_store.dart';
 import 'widgets/response_chart.dart';
 
 /// Two points of the session side by side — L against R, before against
@@ -16,15 +18,19 @@ import 'widgets/response_chart.dart';
 /// bands, and are drawn as such. The difference curve is what the eye cannot
 /// do reliably from two overlaid traces.
 class CompareScreen extends StatefulWidget {
-  const CompareScreen({super.key, required this.state});
+  const CompareScreen({super.key, required this.state, this.store});
 
   final AppState state;
+  final SessionStore? store;
 
   @override
   State<CompareScreen> createState() => _CompareScreenState();
 }
 
 class _CompareScreenState extends State<CompareScreen> {
+  List<Session> _sessions = const [];
+  Session? _sessionA;
+  Session? _sessionB;
   Measurement? _a;
   Measurement? _b;
   ImpulseResponse? _irA;
@@ -38,13 +44,32 @@ class _CompareScreenState extends State<CompareScreen> {
   @override
   void initState() {
     super.initState();
-    final points = widget.state.session?.points ?? const <Measurement>[];
+    final current = widget.state.session;
+    _sessionA = current;
+    _sessionB = current;
+    final points = current?.points ?? const <Measurement>[];
     // Default to the most useful pair when it exists: the front L/R.
-    final l = widget.state.session?.latestFor(Channel.frontLeft.name);
-    final r = widget.state.session?.latestFor(Channel.frontRight.name);
+    final l = current?.latestFor(Channel.frontLeft.name);
+    final r = current?.latestFor(Channel.frontRight.name);
     _a = l ?? (points.isNotEmpty ? points.first : null);
     _b = r ?? (points.length > 1 ? points[1] : null);
     _load();
+    widget.store?.listAll().then((all) {
+      if (!mounted) return;
+      setState(() {
+        _sessions = [
+          ?(current != null && !all.any((s) => s.id == current.id) ? current : null),
+          ...all,
+        ];
+      });
+    });
+  }
+
+  /// Sessions offered in the pickers: everything on disk plus the live one.
+  List<Session> get _choices {
+    final current = widget.state.session;
+    if (_sessions.isNotEmpty) return _sessions;
+    return [if (current != null) current];
   }
 
   Future<void> _load() async {
@@ -63,25 +88,43 @@ class _CompareScreenState extends State<CompareScreen> {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
-    final points = widget.state.session?.points ?? const <Measurement>[];
+    final total = _choices.fold(0, (n, s) => n + s.points.length);
+    final pointsA = _sessionA?.points ?? const <Measurement>[];
+    final pointsB = _sessionB?.points ?? const <Measurement>[];
     return Scaffold(
       appBar: AppBar(title: const Text('Srovnání')),
-      body: points.length < 2
+      body: total < 2
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
-                child: Text('Srovnání potřebuje aspoň dva body v session.',
+                child: Text('Srovnání potřebuje aspoň dva body.',
                     textAlign: TextAlign.center),
               ),
             )
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _picker('A', _a, points, (m) {
+                if (_choices.length > 1)
+                  _sessionPicker('A', _sessionA, (s) {
+                    setState(() {
+                      _sessionA = s;
+                      _a = s?.points.firstOrNull;
+                    });
+                    _load();
+                  }),
+                _picker('A', _a, pointsA, (m) {
                   setState(() => _a = m);
                   _load();
                 }),
-                _picker('B', _b, points, (m) {
+                if (_choices.length > 1)
+                  _sessionPicker('B', _sessionB, (s) {
+                    setState(() {
+                      _sessionB = s;
+                      _b = s?.points.firstOrNull;
+                    });
+                    _load();
+                  }),
+                _picker('B', _b, pointsB, (m) {
                   setState(() => _b = m);
                   _load();
                 }),
@@ -126,6 +169,30 @@ class _CompareScreenState extends State<CompareScreen> {
     );
   }
 
+  Widget _sessionPicker(
+      String label, Session? value, ValueChanged<Session?> onChanged) {
+    return Row(
+      children: [
+        SizedBox(width: 24, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold))),
+        Expanded(
+          child: DropdownButton<Session>(
+            value: value != null && _choices.any((s) => s.id == value.id)
+                ? _choices.firstWhere((s) => s.id == value.id)
+                : null,
+            isExpanded: true,
+            hint: const Text('Session'),
+            items: [
+              for (final s in _choices)
+                DropdownMenuItem(
+                    value: s, child: Text('${s.name} · ${s.points.length} b.')),
+            ],
+            onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _picker(String label, Measurement? value, List<Measurement> points,
       ValueChanged<Measurement?> onChanged) {
     return Row(
@@ -133,7 +200,7 @@ class _CompareScreenState extends State<CompareScreen> {
         SizedBox(width: 24, child: Text(label)),
         Expanded(
           child: DropdownButton<Measurement>(
-            value: value,
+            value: value != null && points.contains(value) ? value : null,
             isExpanded: true,
             items: [
               for (final p in points)

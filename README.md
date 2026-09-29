@@ -10,6 +10,8 @@ rozdíly mezi místy v jedné místnosti. Absolutní SPL z nekalibrovaného tele
 neexistuje a appka ho nikde netvrdí.
 
 Plán, ze kterého to vzniklo: [`ROOMSCAN_PLAN.md`](ROOMSCAN_PLAN.md).
+Co chybí proti REW a Dirac Live a v jakém pořadí to dotáhnout:
+[`ROOMSCAN_PLAN_2.md`](ROOMSCAN_PLAN_2.md).
 
 ## Co telefon neumí, a co z toho plyne pro návrh
 

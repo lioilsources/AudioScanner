@@ -46,6 +46,7 @@ class FrdExport {
     Measurement? point,
     double validAbove = 0,
     double maxFrequency = 20000,
+    String? phaseNote,
   }) {
     final b = StringBuffer();
     _header(b, session: session, point: point);
@@ -54,6 +55,7 @@ class FrdExport {
           '${validAbove.toStringAsFixed(0)} Hz. Below that the gate, not the '
           'room, sets the curve.');
     }
+    if (phaseNote != null) b.writeln('* $phaseNote');
     b.writeln('*');
     b.writeln('* Freq(Hz)  SPL(dB)  Phase(deg)');
     for (var i = 0; i < frequencies.length; i++) {

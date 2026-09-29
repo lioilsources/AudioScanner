@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:audio_scanner/dsp/impulse_response.dart';
+import 'package:audio_scanner/export/frd.dart';
 import 'package:audio_scanner/dsp/octave_bands.dart';
 import 'package:audio_scanner/dsp/spectrum.dart';
 import 'package:audio_scanner/signal/log_sweep.dart';
@@ -197,6 +198,47 @@ void main() {
       expect(ir.directSoundIndex, 100);
       expect(ir.firstReflectionIndex(skip: const Duration(milliseconds: 1)),
           100 + 240);
+    });
+
+    test('phase is flat once the propagation delay is removed', () {
+      final s = Float64List(4096);
+      s[700] = 1.0;
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final (freqs, re, im) = ir.complexResponse(fftSize: 4096);
+      final phase = FrdExport.phaseDegrees(re, im);
+      for (var k = 1; k < freqs.length; k++) {
+        expect(phase[k].abs(), lessThan(1.0));
+      }
+    });
+
+    test('phase without delay removal slopes by exactly the delay', () {
+      final s = Float64List(4096);
+      s[700] = 1.0;
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final (freqs, re, im) =
+          ir.complexResponse(fftSize: 4096, removeDelay: false);
+      final phase = FrdExport.phaseDegrees(re, im);
+      // A delay of N samples is a phase of −360·k·N/n degrees at bin k.
+      for (final k in [1, 5, 40]) {
+        expect(phase[k], closeTo(-360.0 * k * 700 / 4096, 0.5));
+      }
+      expect(freqs[1], closeTo(48000 / 4096, 1e-9));
+    });
+
+    test('a reflection shows up as ripple in magnitude and phase', () {
+      final s = Float64List(4096);
+      s[100] = 1.0;
+      s[100 + 48] = 0.5; // 1 ms later: comb with 1 kHz spacing
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final (freqs, levels) = ir.frequencyResponse(fftSize: 4096);
+      int binOf(double hz) => (hz / (48000 / 4096)).round();
+      // Constructive at 1 kHz (path difference one period), destructive at
+      // 500 Hz (half a period).
+      expect(levels[binOf(1000)] - levels[binOf(500)], closeTo(9.5, 0.6));
+      final (_, re, im) = ir.complexResponse(fftSize: 4096);
+      final phase = FrdExport.phaseDegrees(re, im);
+      expect(phase.any((p) => p.abs() > 5), isTrue);
+      expect(freqs.length, 2049);
     });
 
     test('gating states the frequency below which it says nothing', () {

@@ -172,27 +172,55 @@ class ImpulseResponse {
   /// Lowest frequency a response gated to this length can be trusted at.
   double get gatedResponseValidAbove => sampleRate / samples.length;
 
-  /// Magnitude response in dB, one value per FFT bin.
+  /// Complex spectrum of the response: (frequencies, real, imaginary).
   ///
-  /// Returns (frequencies, levels). [fftSize] is rounded up to a power of two
-  /// and the response is zero-padded into it, which interpolates the curve but
-  /// adds no resolution — the real resolution is set by the window length.
-  (Float64List, Float64List) frequencyResponse({int fftSize = 16384}) {
+  /// [fftSize] is rounded up to a power of two and the response is zero-padded
+  /// into it, which interpolates the curve but adds no resolution — the real
+  /// resolution is set by the window length.
+  ///
+  /// With [removeDelay] the response is rotated so the direct sound sits at
+  /// time zero. Phase is then relative to the direct arrival, which is the
+  /// only phase worth exporting: left in, the playback latency and the flight
+  /// time wrap the whole curve in a steep linear slope that says nothing about
+  /// the speaker or the room and hides everything that does.
+  (Float64List, Float64List, Float64List) complexResponse({
+    int fftSize = 16384,
+    bool removeDelay = true,
+  }) {
     var n = 1;
     while (n < math.max(fftSize, samples.length)) {
       n *= 2;
     }
     final padded = Float64List(n);
-    padded.setRange(0, samples.length, samples);
+    final shift = removeDelay ? directSoundIndex : 0;
+    // A circular shift: the pre-roll ahead of the direct sound wraps to the
+    // end of the buffer, which for an FFT is the same as negative time.
+    for (var i = 0; i < samples.length; i++) {
+      padded[(i - shift + n) % n] = samples[i];
+    }
 
     final spec = FFT(n).realFft(padded);
     final half = n ~/ 2;
     final freqs = Float64List(half + 1);
-    final levels = Float64List(half + 1);
+    final re = Float64List(half + 1);
+    final im = Float64List(half + 1);
     for (var k = 0; k <= half; k++) {
-      final c = spec[k];
-      final mag = math.sqrt(c.x * c.x + c.y * c.y);
       freqs[k] = k * sampleRate / n;
+      re[k] = spec[k].x;
+      im[k] = spec[k].y;
+    }
+    return (freqs, re, im);
+  }
+
+  /// Magnitude response in dB, one value per FFT bin.
+  ///
+  /// Returns (frequencies, levels). See [complexResponse] for the resolution
+  /// caveat.
+  (Float64List, Float64List) frequencyResponse({int fftSize = 16384}) {
+    final (freqs, re, im) = complexResponse(fftSize: fftSize);
+    final levels = Float64List(freqs.length);
+    for (var k = 0; k < freqs.length; k++) {
+      final mag = math.sqrt(re[k] * re[k] + im[k] * im[k]);
       levels[k] = mag <= 0 ? -160 : 20 * math.log(mag) / math.ln10;
     }
     return (freqs, levels);

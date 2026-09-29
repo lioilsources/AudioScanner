@@ -3,11 +3,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../analysis/response_analysis.dart';
 import '../app_state.dart';
 import '../dsp/impulse_response.dart';
 import '../export/frd.dart';
 import '../signal/log_sweep.dart';
 import '../store/session_store.dart';
+import 'widgets/response_chart.dart';
 
 /// Phase 3: record a sweep, deconvolve it, read the room's timing.
 ///
@@ -33,12 +35,27 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
   final double _startHz = 20;
   final double _endHz = 20000;
 
+  /// Gate length in milliseconds. Slider works in log space so 2–20 ms gets
+  /// as much travel as 50–500: the short end is where the choice matters.
+  double _gateMs = 5;
+  int _smoothing = 6;
+
+  ResponseAnalysis? _analysis;
+
   LogSweep get _sweep => LogSweep(
         startHz: _startHz,
         endHz: _endHz,
         duration: Duration(milliseconds: (_seconds * 1000).round()),
         sampleRate: widget.state.captureStatus?.sampleRate ?? 48000,
       );
+
+  Duration get _gate => Duration(microseconds: (_gateMs * 1000).round());
+
+  ResponseAnalysis _analysisFor(ImpulseResponse ir) {
+    final current = _analysis;
+    if (current != null && current.matches(ir, _gate)) return current;
+    return _analysis = ResponseAnalysis.of(ir, gate: _gate);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,7 +73,7 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                 IconButton(
                   icon: const Icon(Icons.ios_share),
                   tooltip: 'Export FRD s fází',
-                  onPressed: () => _exportFrd(ir),
+                  onPressed: () => _exportFrd(_analysisFor(ir)),
                 ),
             ],
           ),
@@ -122,7 +139,17 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                   label: const Text('Začít nahrávat, pak pustit sweep'),
                 ),
               const SizedBox(height: 16),
-              if (ir != null) _Results(ir: ir),
+              if (ir != null) ...[
+                _ResponseCard(
+                  analysis: _analysisFor(ir),
+                  gateMs: _gateMs,
+                  smoothing: _smoothing,
+                  onGateChanged: (ms) => setState(() => _gateMs = ms),
+                  onSmoothingChanged: (f) => setState(() => _smoothing = f),
+                ),
+                const SizedBox(height: 12),
+                _Results(ir: ir, gate: _gate),
+              ],
             ],
           ),
         );
@@ -130,20 +157,18 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
     );
   }
 
-  Future<void> _exportFrd(ImpulseResponse ir) async {
+  Future<void> _exportFrd(ResponseAnalysis a) async {
     final store = widget.store;
     if (store == null) return;
-    final gated = ir.gated();
-    final (freqs, levels) = gated.frequencyResponse();
 
     final text = FrdExport.fromImpulseResponse(
-      frequencies: freqs,
-      magnitudesDb: levels,
-      // Phase from a magnitude-only path would be fabricated; this export is
-      // magnitude with the gate's validity limit stated instead.
-      phasesDeg: List<double>.filled(freqs.length, 0),
+      frequencies: a.frequencies,
+      magnitudesDb: a.gatedDb,
+      phasesDeg: FrdExport.phaseDegrees(a.gatedRe, a.gatedIm),
       session: widget.state.session,
-      validAbove: gated.gatedResponseValidAbove,
+      validAbove: a.validAbove,
+      phaseNote: 'Phase is relative to the direct sound (propagation delay '
+          'removed), unwrapped.',
     );
     final f = await store.writeExport('impulse_gated.frd', text);
     await SharePlus.instance
@@ -151,17 +176,134 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
   }
 }
 
+/// Frequency response of the gated and the full response, with the controls
+/// that decide what "gated" means.
+class _ResponseCard extends StatelessWidget {
+  const _ResponseCard({
+    required this.analysis,
+    required this.gateMs,
+    required this.smoothing,
+    required this.onGateChanged,
+    required this.onSmoothingChanged,
+  });
+
+  final ResponseAnalysis analysis;
+  final double gateMs;
+  final int smoothing;
+  final ValueChanged<double> onGateChanged;
+  final ValueChanged<int> onSmoothingChanged;
+
+  static const _minGateMs = 2.0;
+  static const _maxGateMs = 500.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final ir = analysis.source;
+    final reflection = ir.firstReflectionIndex();
+    final toReflectionMs = reflection == null
+        ? null
+        : (reflection - ir.directSoundIndex) / ir.sampleRate * 1000 - 0.5;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Frekvenční odezva', style: t.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 220,
+              child: ResponseChart(
+                curves: [
+                  ResponseCurve(
+                    frequencies: analysis.frequencies,
+                    levelsDb: analysis.roomSmoothed(smoothing),
+                    label: 's místností (1 s)',
+                    color: t.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    strokeWidth: 1.5,
+                  ),
+                  ResponseCurve(
+                    frequencies: analysis.frequencies,
+                    levelsDb: analysis.gatedSmoothed(smoothing),
+                    label: 'přímý zvuk (okno ${gateMs.toStringAsFixed(gateMs < 10 ? 1 : 0)} ms)',
+                    color: t.colorScheme.primary,
+                  ),
+                ],
+                validAbove: analysis.validAbove,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text('Okno', style: t.textTheme.bodyMedium),
+                Expanded(
+                  child: Slider(
+                    value: math.log(gateMs.clamp(_minGateMs, _maxGateMs)),
+                    min: math.log(_minGateMs),
+                    max: math.log(_maxGateMs),
+                    label: '${gateMs.toStringAsFixed(gateMs < 10 ? 1 : 0)} ms',
+                    onChanged: (v) => onGateChanged(
+                        double.parse(math.exp(v).toStringAsFixed(1))),
+                  ),
+                ),
+                Text('${gateMs.toStringAsFixed(gateMs < 10 ? 1 : 0)} ms',
+                    style: t.textTheme.bodyMedium),
+              ],
+            ),
+            Text(
+              'Delší okno vidí níž (teď platné nad '
+              '${analysis.validAbove.toStringAsFixed(0)} Hz), ale pustí dovnitř '
+              'první odraz. Pod hranicí se křivka nevyhlazuje ani nekomentuje: '
+              'je to okno, ne místnost.',
+              style: t.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (toReflectionMs != null && toReflectionMs >= _minGateMs)
+                  OutlinedButton(
+                    onPressed: () => onGateChanged(
+                        double.parse(toReflectionMs.toStringAsFixed(1))),
+                    child: Text(
+                        'Do prvního odrazu (${toReflectionMs.toStringAsFixed(1)} ms)'),
+                  ),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 3, label: Text('1/3')),
+                    ButtonSegment(value: 6, label: Text('1/6')),
+                    ButtonSegment(value: 12, label: Text('1/12')),
+                    ButtonSegment(value: 24, label: Text('1/24')),
+                  ],
+                  selected: {smoothing},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) => onSmoothingChanged(s.first),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Results extends StatelessWidget {
-  const _Results({required this.ir});
+  const _Results({required this.ir, required this.gate});
 
   final ImpulseResponse ir;
+  final Duration gate;
 
   @override
   Widget build(BuildContext context) {
     final rt20 = ir.rt60(decayDb: 20);
     final rt30 = ir.rt60(decayDb: 30);
     final reflection = ir.firstReflectionIndex();
-    final gated = ir.gated();
+    final gated = ir.gated(window: gate);
 
     String ms(int samples) =>
         '${(samples / ir.sampleRate * 1000).toStringAsFixed(1)} ms';

@@ -98,7 +98,7 @@ class _SpectrogramPainter extends CustomPainter {
     }
 
     final labelStyle = TextStyle(fontSize: 10, color: scheme.onSurfaceVariant);
-    for (final hz in [50.0, 100, 200, 500, 1000, 2000, 5000]) {
+    for (final hz in <double>[50, 100, 200, 500, 1000, 2000, 5000]) {
       if (hz < minHz || hz > maxHz) continue;
       final tp = TextPainter(
         text: TextSpan(

@@ -8,6 +8,25 @@ zadávaný 15pásmový grafický EQ. Fázová korekce, smíšená fáze, integra
 subwooferů a absolutní SPL bez kalibrace se **nedělají** a nemají se
 předstírat.
 
+## Stav
+
+Všech osm etap je implementováno, `flutter test` má 124 testů. Odchylky od
+textu níže, na které se přišlo při práci:
+
+- **Dekonvoluce měla obrácenou obálku inverzního filtru** (sklon −12 dB/okt)
+  a `fftea.convolution` ořezává výsledek na max(n) vzorků. Opraveno v etapě
+  6, kde se to ukázalo na úrovni harmonických; regresní test na plochost je v
+  `test/signal_test.dart`.
+- **Opakované sweepy kanálu** se průměrují („Přidat") nebo nahrazují
+  („Znovu"); průvodce nabízí obojí, protože po posunu repra je průměr se
+  starým měřením špatně.
+- **Q filtru přijímače** vyšlo 2,0 (vlnění 0,6 dB při všech pásmech +3 dB).
+- **Etapa 8:** spektrogram ano, generátor z telefonu ne — vyžaduje nativní
+  přehrávač na obou platformách a README ho vědomě vynechává.
+- **Absolutní hladina dekonvoluce** není 0 dB: normalizuje se na špičku
+  impulzu v čase, takže plochý řetězec čte ve spektru konstantní offset.
+  Všechno navazující kotví na 1 kHz, takže na tom nic nestojí.
+
 ## Pravidla, která platí pro každou etapu
 
 - **Nevymýšlet data.** Fáze se zapisuje jen tam, kde skutečně existuje. Pod

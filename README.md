@@ -10,6 +10,8 @@ rozdíly mezi místy v jedné místnosti. Absolutní SPL z nekalibrovaného tele
 neexistuje a appka ho nikde netvrdí.
 
 Plán, ze kterého to vzniklo: [`ROOMSCAN_PLAN.md`](ROOMSCAN_PLAN.md).
+Co chybí proti REW a Dirac Live a v jakém pořadí to dotáhnout:
+[`ROOMSCAN_PLAN_2.md`](ROOMSCAN_PLAN_2.md).
 
 ## Co telefon neumí, a co z toho plyne pro návrh
 
@@ -31,9 +33,10 @@ jak je:
 |---|---|
 | **1 — SPL metr + RTA** | Hotovo. Nativní capture s `.measurement` mode, FFT 8192 / Hann, 31 třetinooktávových pásem 20 Hz–20 kHz, energetické průměrování, export WAV (růžový šum, log sweep, L/R zvlášť). |
 | **2 — AR body** | Hotovo. ARKit world tracking, počátek klepnutím, „změřit tady" s 3s průměrováním, průběžný režim po 0,5 m, půdorysná IDW heatmapa s posuvníkem pásem. |
-| **3 — Impulzní odezva** | Hotovo. Farinova dekonvoluce log sweepem, přímý zvuk, první odraz, gating, RT60 (T20/T30, Schroeder), Schroederova křivka. |
-| **4 — Výstupy** | Částečně. FRD per bod i z gated odezvy, JSON session, doporučení nejrovnějšího místa. **3D mrak bodů není** — plán sám píše, že výška málokdy přidá informaci, tak jsem zůstal u 2D. |
+| **3 — Impulzní odezva** | Hotovo. Farinova dekonvoluce log sweepem, přímý zvuk, první odraz, gating s nastavitelným oknem, graf frekvenční odezvy (gated i s místností) s vyhlazováním 1/3–1/24 oktávy, graf impulzu a ETC, RT60 (EDT/T20/T30) a C50/C80 po oktávách, Schroederova křivka, spektrogram, zkreslení HD2/HD3. |
+| **4 — Výstupy** | Hotovo až na 3D. FRD per bod, FRD z gated odezvy se skutečnou fází, JSON session, `.ir` soubory s impulzy, doporučení nejrovnějšího místa, srovnání libovolných dvou bodů i napříč session. **3D mrak bodů není** — plán sám píše, že výška málokdy přidá informaci, tak jsem zůstal u 2D. |
 | **5 — Návrh konfigurace** | Hotovo. LiDAR geometrie přes RoomPlan, módy místnosti modální sumací, softwarový „subwoofer crawl", body prvních odrazů zrcadlením, kontrola úhlů proti Dolby, generátor nastavení pro Integra DRX-8.4 včetně jeho 15 EQ pásem. |
+| **6 — Dotažení proti REW a Dirac** | Hotovo podle [`ROOMSCAN_PLAN_2.md`](ROOMSCAN_PLAN_2.md). Měření per kanál sweepem, EQ z průměru bodů kolem posluchače s vahou podle rozptylu, model filtru přijímače a náhled před/cíl/po s ověřením druhým měřením, editor cílové křivky, kalibrační soubor mikrofonu a SPL offset, peak hold a stopy v RTA. |
 
 ### Co vědomě chybí
 
@@ -48,8 +51,9 @@ jak je:
   roviny z ARCore — vidí stěny, na které se kamera koukala, málokdy rohy,
   nikdy za nábytkem. Na pojmenování módu to stačí, na body odrazů ne, a
   geometrie to o sobě nese jako `GeometrySource.arPlanes`.
-- **Srovnání L vs R v appce.** Export sweepu zvlášť do každého kanálu je hotový,
-  porovnávací pohled ne.
+- **Fázová korekce, parametrický EQ, více subwooferů.** Integra bere jen
+  vzdálenost po centimetru a 15 grafických pásem; cokoli navíc chce externí
+  DSP a druhý měřicí kanál. FRD export do REW je správná dělba.
 
 ## Architektura
 
@@ -58,15 +62,25 @@ lib/
 ├── audio/audio_capture.dart    platform channel → raw PCM (Swift)
 ├── ar/ar_tracking.dart         platform channel → pozice z ARKitu
 ├── dsp/
-│   ├── spectrum.dart           FFT, Hann, kompenzace zisku okna, dBFS
-│   ├── octave_bands.dart       ISO 266, 31 pásem, součet energie do pásem
-│   └── impulse_response.dart   dekonvoluce, gating, RT60, odrazy
+│   ├── spectrum.dart           FFT, Hann, kompenzace zisku okna, dBFS, peak hold
+│   ├── octave_bands.dart       ISO 266, 31 pásem, součet energie do pásem, průměr pro přenosy
+│   ├── impulse_response.dart   dekonvoluce, gating, komplexní spektrum, RT60, clarity, ETC
+│   ├── smoothing.dart          zlomkooktávové vyhlazování, energeticky na log ose
+│   ├── band_filter.dart        oktávová filtrace impulzu, EDT/T20/T30/C50 po pásmech
+│   ├── graphic_eq.dart         model 15 pásem přijímače (peaking, Q = 2), odchylka od cíle
+│   ├── distortion.dart         HD2/HD3 ze záporného času Farinovy dekonvoluce
+│   └── spectrogram.dart        STFT impulzu
 ├── signal/
 │   ├── log_sweep.dart          Farina: sweep + inverzní filtr
 │   ├── pink_noise.dart         Kellettův šestipólový filtr
 │   └── wav.dart                RIFF zápis, mono/stereo, 16bit/float32
-├── model/                      Vec3, Measurement, Session
-├── analysis/heatmap.dart       IDW interpolace, nejrovnější místo
+├── model/                      Vec3, Measurement (+ kanál, souhrn impulzu), Session (+ cíl, kalibrace)
+├── model/mic_calibration.dart  parser UMIK/REW souborů, log interpolace
+├── analysis/
+│   ├── heatmap.dart            IDW interpolace, nejrovnější místo
+│   ├── spatial_average.dart    průměr a rozptyl bodů kolem posluchače
+│   ├── response_analysis.dart  gated + celá odezva jednou per (impulz, okno)
+│   └── decay_analysis.dart     doznívání po pásmech jednou per impulz
 ├── room/
 │   ├── room_capture.dart       platform channel → RoomPlan (LiDAR)
 │   ├── room_geometry.dart      kvádrový fit, Schroeder, poměry stran
@@ -77,8 +91,8 @@ lib/
 │   └── design_report.dart      spojení geometrie a měření do nálezů
 ├── export/frd.dart             FRD pro REW / VituixCAD
 ├── export/avr_config.dart      nastavení přijímače včetně EQ presetů
-├── store/session_store.dart    JSON na disk, atomický zápis
-└── ui/                         RTA · sken · mapa · odezva · signály
+├── store/session_store.dart    JSON na disk, atomický zápis, float32 sidecary impulzů
+└── ui/                         RTA · sken · mapa · odezva · srovnání · návrh · signály
 
 ios/Runner/
 ├── AudioCapture.swift          AVAudioSession .measurement, AVAudioEngine tap
@@ -161,10 +175,14 @@ protože nad ní jednobodové měření popisuje ten bod, ne místnost.
 5. Telefon drž svisle na natažené ruce, mikrofonem k bednám. Naplocho si ho
    stíníš tělem.
 6. Choď a měř. Průběžný režim ukládá bod každých 0,5 m.
+7. Pro EQ a hlasitosti se vrať na místo posluchače a v záložce Návrh změř
+   každý kanál sweepem (soubor pro daný kanál je v Signálech). Po zadání EQ
+   do přijímače změř kanál znovu s přepínačem „po EQ" — rozdíl proti
+   předpovědi je jediná zpětná vazba o skutečném filtru přijímače.
 
 ## Ověření
 
-`flutter test` — 74 testů, všechny procházejí. Co reálně ověřují:
+`flutter test` — 124 testů, všechny procházejí. Co reálně ověřují:
 
 - **Spektrum:** sinus na plné výchylce čte 0 dBFS (ne −6 dB, které by dal
   nekompenzovaný Hann); 1 kHz tón padne do pásma 1 kHz a o dvě pásma vedle je
@@ -186,7 +204,35 @@ protože nad ní jednobodové měření popisuje ten bod, ne místnost.
 - **Dělicí kmitočty** nikdy nevrátí hodnotu, která na přijímači nejde nastavit,
   Atmos moduly nikdy nedostanou míň než 100 Hz a nic nepřekročí 120 Hz.
 - **EQ** řeže hrb, ale nehoní nulu, drží krok a rozsah přijímače a nesahá nad
-  Schroederovu frekvenci.
+  Schroederovu frekvenci. Pásmo, které se mezi místy kolem posluchače liší o
+  víc než 6 dB, dostane jen poloviční korekci.
+- **Dekonvoluce plochého řetězce je plochá** v 1 dB přes 100 Hz–6,4 kHz a
+  fáze po odstranění zpoždění je nulová do 1°. Tenhle test chyběl a schovával
+  obrácenou obálku inverzního filtru (viz níže).
+- **Model filtru přijímače:** jedno pásmo +3 dB čte +3 ve středu a nic dvě
+  oktávy vedle; všechna pásma +3 dB dají vlnění pod 1 dB, což fixuje Q.
+- **Doznívání po pásmech:** syntetický signál s RT 0,8 s v basech a 0,3 s
+  výš vrátí obě hodnoty do 0,1 s; EDT se na ideálním doznívání rovná T20;
+  C50 vychází 3 dB pro odraz s polovinou energie po 60 ms.
+- **Zkreslení:** řetězec y = x + 0,1·x² dá HD2 −32 dB (±3) a HD3 pod −50 dB,
+  harmonická leží přesně L·ln 2 před přímým zvukem.
+- **Kalibrace:** parser čte UMIK i REW formát včetně hlaviček, interpoluje na
+  log ose, korekce nikdy nemění uložený bod a FRD hlavička říká, co bylo použito.
+- **Párování s kanály:** bod s id `p1` a kanálem `frontLeft` dostane EQ, bod
+  bez kanálu ne. Regresní test na chybu, kvůli které se EQ v appce nikdy
+  nespočítal.
+
+### Chyby nalezené a opravené při dotažení
+
+- **Obrácená obálka inverzního filtru.** `LogSweep.inverseFilter` měl
+  `exp(−t/L)` místo `exp(+t/L)`, takže odezva plochého řetězce měla sklon
+  −12 dB/oktávu a impulz se rozmazal do basů. Testy to nezachytily, protože
+  `fftea.convolution` vrací jen prvních max(n) vzorků a při nulovém zpoždění
+  vyšel impulz dlouhý jeden vzorek. Dekonvoluce teď dělá plnou lineární
+  konvoluci.
+- **Návrh pároval měření s kanály přes id.** Skenování generuje `p1`, `p2`, a
+  tak se EQ a level trim v reálné appce nikdy nespočítaly. Měření teď nese
+  `channel`.
 
 `flutter build ios --no-codesign` prochází — nativní Swift se přeloží a slinkuje.
 `flutter build apk` (debug i release) prochází — Kotlin s ARCore 1.56 taky.

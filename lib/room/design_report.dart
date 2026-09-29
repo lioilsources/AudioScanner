@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../analysis/spatial_average.dart';
 import '../dsp/octave_bands.dart';
 import '../export/avr_config.dart';
 import '../model/measurement.dart';
@@ -84,6 +85,7 @@ DesignReport buildDesignReport({
   double forward = 0,
   TargetCurve target = const TargetCurve(),
   bool allowFullRangeFronts = false,
+  double seatRadiusM = 1.0,
 }) {
   final modes = modesBelow(room, maxHz: 200);
   final findings = <Finding>[];
@@ -207,7 +209,28 @@ DesignReport buildDesignReport({
 
   // --- per-channel config ---------------------------------------------------
 
-  final byChannel = {for (final m in measurements) m.id: m};
+  // Keyed on the channel the point was taken for. Ids are 'p1', 'p2' and so
+  // on and never a channel name; keying on them is how the EQ silently went
+  // missing from every real session.
+  final byChannel = <String, Measurement>{};
+  final repeatsByChannel = <String, List<Measurement>>{};
+  for (final m in measurements) {
+    final ch = m.channel;
+    if (ch == null || m.afterEq) continue;
+    (repeatsByChannel[ch] ??= []).add(m);
+    final existing = byChannel[ch];
+    if (existing == null || m.timestamp.isAfter(existing.timestamp)) {
+      byChannel[ch] = m;
+    }
+  }
+  final meanLevel = _meanLevel(byChannel.values);
+
+  // How much the room walk varied within a metre of the seat. The AR origin
+  // is the seat by the measuring instructions, so "around the origin" is
+  // "around the listener". Two sources of spread are merged band by band:
+  // the walk, and repeated sweeps of the same channel.
+  final seatArea = spatialAverage(measurements.where((m) => m.channel == null),
+      around: Vec3.zero, radiusM: seatRadiusM);
   final channels = <ChannelConfig>[];
   final crossovers = <int>[];
 
@@ -244,8 +267,9 @@ DesignReport buildDesignReport({
       distanceM: (check.distance / integraDistanceStepM).round() *
           integraDistanceStepM,
       crossoverHz: xo,
-      levelDb: _levelFor(byChannel, s.channel),
-      eq: _eqFor(byChannel, s.channel, target, room),
+      levelDb: _levelFor(byChannel, s.channel, meanLevel),
+      eq: _eqFor(repeatsByChannel[s.channel.name] ?? const [], seatArea,
+          target, room),
       warnings: warnings,
     ));
   }
@@ -295,30 +319,56 @@ DesignReport buildDesignReport({
   );
 }
 
-double _levelFor(Map<String, Measurement> byChannel, Channel channel) {
+/// Energy mean of the measured channels' broadband levels — the common
+/// reference every trim is quoted against. Absolute level is meaningless from
+/// an uncalibrated microphone; what a level calibration does is make every
+/// channel read the same at the seat, and that only needs the differences.
+double? _meanLevel(Iterable<Measurement> measured) {
+  var sum = 0.0;
+  var n = 0;
+  for (final m in measured) {
+    sum += math.pow(10, m.rmsDbfs / 10).toDouble();
+    n++;
+  }
+  if (n == 0) return null;
+  return 10 * math.log(sum / n) / math.ln10;
+}
+
+double _levelFor(
+  Map<String, Measurement> byChannel,
+  Channel channel,
+  double? meanLevel,
+) {
   final m = byChannel[channel.name];
-  if (m == null) return 0;
-  // Trim toward a common reference: the broadband level the channel came in at,
-  // rounded to what the receiver accepts.
-  final delta = -m.rmsDbfs - 20;
+  if (m == null || meanLevel == null) return 0;
+  // Trim toward the mean of the measured channels, rounded to what the
+  // receiver accepts. A channel that came in hot gets cut, a quiet one lifted.
+  final delta = meanLevel - m.rmsDbfs;
   return (delta.clamp(-12.0, 12.0) / integraLevelStepDb).round() *
       integraLevelStepDb;
 }
 
 EqPreset? _eqFor(
-  Map<String, Measurement> byChannel,
-  Channel channel,
+  List<Measurement> repeats,
+  SpatialAverage seatArea,
   TargetCurve target,
   RoomGeometry room,
 ) {
-  final m = byChannel[channel.name];
-  if (m == null) return null;
+  if (repeats.isEmpty) return null;
+  // Repeated sweeps of one channel average like any other set of points at
+  // the seat — energy mean, spread in dB.
+  final own = spatialAverage(repeats, radiusM: double.infinity);
+  final spread = List<double>.generate(
+    OctaveBands.all.length,
+    (i) => math.max(own.spreadDb[i], seatArea.spreadDb[i]),
+  );
   return generateEq(
-    measuredBandsDb: m.bandsDb,
+    measuredBandsDb: own.meanBandsDb,
     measuredBandCenters: [for (final b in OctaveBands.all) b.nominal],
     target: target,
     // Never equalise above where a one-point measurement stops describing the
     // room. Schroeder, not a round number.
     maxEqHz: math.min(300, room.schroederFrequency),
+    spreadBandsDb: seatArea.count > 1 || repeats.length > 1 ? spread : null,
   );
 }

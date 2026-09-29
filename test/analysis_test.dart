@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:audio_scanner/analysis/heatmap.dart';
 import 'package:audio_scanner/audio/audio_capture.dart';
+import 'package:audio_scanner/dsp/impulse_response.dart';
 import 'package:audio_scanner/dsp/octave_bands.dart';
 import 'package:audio_scanner/export/frd.dart';
 import 'package:audio_scanner/model/measurement.dart';
@@ -153,6 +156,89 @@ void main() {
     });
   });
 
+  group('Measurement JSON', () {
+    test('round-trips a channel point with its impulse summary', () {
+      final ir = ImpulseResponse(
+        samples: Float64List(4800)..[240] = 1.0,
+        sampleRate: 48000,
+      );
+      final m = Measurement(
+        id: 'p3',
+        position: Vec3.zero,
+        timestamp: DateTime.utc(2026, 9, 29),
+        bandsDb: List<double>.filled(OctaveBands.all.length, -20),
+        rmsDbfs: -20,
+        channel: 'frontLeft',
+        afterEq: true,
+        impulse: ImpulseSummary.from(ir,
+            gate: const Duration(milliseconds: 5), file: 's_p3.ir'),
+      );
+      final back = Measurement.fromJson(
+          jsonDecode(jsonEncode(m.toJson())) as Map<String, dynamic>);
+      expect(back.channel, 'frontLeft');
+      expect(back.afterEq, isTrue);
+      expect(back.impulse, isNotNull);
+      expect(back.impulse!.arrivalMs, closeTo(5, 0.01));
+      expect(back.impulse!.gateMs, 5);
+      expect(back.impulse!.file, 's_p3.ir');
+      expect(back.impulse!.gatedBandsDb, hasLength(OctaveBands.all.length));
+      // A lone unit impulse is flat: every band reads about 0 dB.
+      for (final b in back.impulse!.gatedBandsDb) {
+        expect(b, closeTo(0, 0.5));
+      }
+    });
+
+    test('a point written before channels existed still loads', () {
+      final old = {
+        'id': 'p1',
+        'position': {'x': 0, 'y': 1, 'z': 0},
+        'timestamp': '2026-01-01T00:00:00.000Z',
+        'bandsDb': List<double>.filled(OctaveBands.all.length, -40),
+        'rmsDbfs': -30,
+      };
+      final m = Measurement.fromJson(old);
+      expect(m.channel, isNull);
+      expect(m.impulse, isNull);
+      expect(m.afterEq, isFalse);
+      expect(m.toJson().containsKey('channel'), isFalse);
+    });
+
+    test('the map is made of walk points only', () {
+      final s = Session(
+        id: 's',
+        name: 's',
+        createdAt: DateTime.utc(2026),
+        signal: ExcitationSignal.externalSweep,
+        points: [
+          point('p1', 0, 0),
+          Measurement(
+            id: 'p2',
+            position: Vec3.zero,
+            timestamp: DateTime.utc(2026, 1, 2),
+            bandsDb: List<double>.filled(OctaveBands.all.length, 0),
+            rmsDbfs: 0,
+            channel: 'frontLeft',
+          ),
+        ],
+      );
+      expect(s.mapPoints.map((p) => p.id), ['p1']);
+      expect(s.channelPoints.map((p) => p.id), ['p2']);
+      expect(s.reference!.id, 'p1');
+      expect(s.latestFor('frontLeft')!.id, 'p2');
+      expect(s.latestFor('frontLeft', afterEq: true), isNull);
+    });
+  });
+
+  group('band means of a transfer function', () {
+    test('a flat transfer function stays flat in every band', () {
+      final levels = List<double>.filled(8193, -6.0);
+      final bands = bandMeansFromTransferDb(levels, binHz: 48000 / 16384);
+      for (final b in bands) {
+        expect(b, closeTo(-6, 1e-9));
+      }
+    });
+  });
+
   group('FrameAssembler', () {
     test('reframes arbitrary OS block sizes into fixed analysis frames', () {
       final asm = FrameAssembler(frameSize: 8);
@@ -258,6 +344,45 @@ void main() {
         ));
       }
       expect((await store.listAll()).map((s) => s.id), ['s2', 's1', 's0']);
+    });
+
+    test('writes and reads an impulse sidecar to float32 precision', () async {
+      final samples = Float64List(1000);
+      for (var i = 0; i < samples.length; i++) {
+        samples[i] = (i % 7 - 3) / 3.0;
+      }
+      final ir = ImpulseResponse(samples: samples, sampleRate: 44100);
+      final name = await store.writeImpulse('s1', 'p4', ir);
+      expect(name, 's1_p4.ir');
+
+      final back = await store.readImpulse(name);
+      expect(back, isNotNull);
+      expect(back!.sampleRate, 44100);
+      expect(back.samples.length, 1000);
+      for (var i = 0; i < 1000; i++) {
+        expect(back.samples[i], closeTo(samples[i], 1e-6));
+      }
+    });
+
+    test('a foreign or truncated file reads as null, not garbage', () async {
+      File('${dir.path}/junk.ir').writeAsStringSync('not an impulse');
+      expect(await store.readImpulse('junk.ir'), isNull);
+      expect(await store.readImpulse('missing.ir'), isNull);
+    });
+
+    test('deleting a session takes its sidecars with it', () async {
+      final ir = ImpulseResponse(samples: Float64List(10), sampleRate: 48000);
+      await store.writeImpulse('gone', 'p1', ir);
+      await store.writeImpulse('kept', 'p1', ir);
+      await store.save(Session(
+        id: 'gone',
+        name: 'x',
+        createdAt: DateTime.utc(2026),
+        signal: ExcitationSignal.externalSweep,
+      ));
+      await store.delete('gone');
+      expect(File('${dir.path}/gone_p1.ir').existsSync(), isFalse);
+      expect(File('${dir.path}/kept_p1.ir').existsSync(), isTrue);
     });
 
     test('an unknown id reads as null, not an exception', () async {

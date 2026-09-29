@@ -85,4 +85,29 @@ void main() {
       expect(BandAverager(3).meanDb, everyElement(-160));
     });
   });
+
+  group('PeakHold', () {
+    test('holds the maximum and the minimum until reset', () {
+      final hold = PeakHold(1, decayDbPerSecond: 10);
+      hold.update([-30], Duration.zero);
+      hold.update([-50], const Duration(milliseconds: 100));
+      hold.update([-40], const Duration(milliseconds: 100));
+      expect(hold.maxDb.first, -30);
+      expect(hold.minDb.first, -50);
+      expect(hold.hasData, isTrue);
+      hold.reset();
+      expect(hold.hasData, isFalse);
+      expect(hold.maxDb.first, -160);
+      expect(hold.minDb.first, -160);
+    });
+
+    test('the peak falls at the decay rate and jumps to a new maximum', () {
+      final hold = PeakHold(1, decayDbPerSecond: 10);
+      hold.update([-30], Duration.zero);
+      hold.update([-60], const Duration(milliseconds: 500));
+      expect(hold.peakDb.first, closeTo(-35, 1e-9));
+      hold.update([-20], const Duration(milliseconds: 500));
+      expect(hold.peakDb.first, -20);
+    });
+  });
 }

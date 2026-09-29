@@ -21,13 +21,13 @@ ImpulseResponse deconvolveSweep({
   required LogSweep sweep,
 }) {
   final inverse = sweep.inverseFilter();
-  final raw = convolution(recording, inverse);
+  final raw = _linearConvolution(recording, inverse);
 
   // Normalise against the chain's own answer: sweep ⊛ inverse is the impulse
   // this method would produce from a perfect, unity-gain measurement. Dividing
   // by its peak makes the direct sound read 0 dB for a flat chain, so levels
   // between points are comparable.
-  final reference = convolution(sweep.generate(), inverse);
+  final reference = _linearConvolution(sweep.generate(), inverse);
   final refPeak = _peakMagnitude(reference);
 
   // A linear convolution with a time-reversed filter puts time zero at index
@@ -41,12 +41,38 @@ ImpulseResponse deconvolveSweep({
   final offset = inverse.length - 1;
   final length = math.max(0, raw.length - offset);
   final out = Float64List(length);
+  // Kept rather than thrown away: the harmonics are the distortion
+  // measurement, and the only way to tell an overdriven take from a room
+  // with an extra reflection.
+  final negative = Float64List(offset);
   if (refPeak > 0) {
     for (var i = 0; i < length; i++) {
       out[i] = raw[offset + i] / refPeak;
     }
+    for (var i = 0; i < offset; i++) {
+      negative[i] = raw[i] / refPeak;
+    }
   }
-  return ImpulseResponse(samples: out, sampleRate: sweep.sampleRate);
+  return ImpulseResponse(
+    samples: out,
+    sampleRate: sweep.sampleRate,
+    negativeTime: negative,
+  );
+}
+
+/// Full linear convolution, a.length + b.length − 1 samples.
+///
+/// fftea's `convolution` keeps only the first max(a, b) samples, which for a
+/// recording barely longer than the sweep leaves an impulse response a few
+/// samples long and silently drops the decay the RT60 needs.
+Float64List _linearConvolution(List<double> a, List<double> b) {
+  final full = a.length + b.length - 1;
+  var n = 1;
+  while (n < full) {
+    n *= 2;
+  }
+  final out = circularConvolution(a, b, n);
+  return Float64List.sublistView(out, 0, full);
 }
 
 double _peakMagnitude(List<double> x) {
@@ -60,10 +86,30 @@ double _peakMagnitude(List<double> x) {
 
 /// An impulse response and the measurements taken from it.
 class ImpulseResponse {
-  ImpulseResponse({required this.samples, required this.sampleRate});
+  ImpulseResponse({
+    required this.samples,
+    required this.sampleRate,
+    this.negativeTime,
+  });
 
   final Float64List samples;
   final double sampleRate;
+
+  /// Farina's negative-time region: what the deconvolution produced *before*
+  /// the start of the recording, where the harmonic distortion products of
+  /// a log sweep land. Index i is sample i − length in the extended timeline,
+  /// i.e. the last element is one sample before [samples] begins. Null for a
+  /// response that did not come from a sweep.
+  final Float64List? negativeTime;
+
+  /// Sample at an extended index that may be negative (see [negativeTime]).
+  double sampleAt(int i) {
+    if (i >= 0) return i < samples.length ? samples[i] : 0;
+    final neg = negativeTime;
+    if (neg == null) return 0;
+    final j = neg.length + i;
+    return j >= 0 ? neg[j] : 0;
+  }
 
   /// Index of the direct sound — the largest peak.
   ///
@@ -172,27 +218,55 @@ class ImpulseResponse {
   /// Lowest frequency a response gated to this length can be trusted at.
   double get gatedResponseValidAbove => sampleRate / samples.length;
 
-  /// Magnitude response in dB, one value per FFT bin.
+  /// Complex spectrum of the response: (frequencies, real, imaginary).
   ///
-  /// Returns (frequencies, levels). [fftSize] is rounded up to a power of two
-  /// and the response is zero-padded into it, which interpolates the curve but
-  /// adds no resolution — the real resolution is set by the window length.
-  (Float64List, Float64List) frequencyResponse({int fftSize = 16384}) {
+  /// [fftSize] is rounded up to a power of two and the response is zero-padded
+  /// into it, which interpolates the curve but adds no resolution — the real
+  /// resolution is set by the window length.
+  ///
+  /// With [removeDelay] the response is rotated so the direct sound sits at
+  /// time zero. Phase is then relative to the direct arrival, which is the
+  /// only phase worth exporting: left in, the playback latency and the flight
+  /// time wrap the whole curve in a steep linear slope that says nothing about
+  /// the speaker or the room and hides everything that does.
+  (Float64List, Float64List, Float64List) complexResponse({
+    int fftSize = 16384,
+    bool removeDelay = true,
+  }) {
     var n = 1;
     while (n < math.max(fftSize, samples.length)) {
       n *= 2;
     }
     final padded = Float64List(n);
-    padded.setRange(0, samples.length, samples);
+    final shift = removeDelay ? directSoundIndex : 0;
+    // A circular shift: the pre-roll ahead of the direct sound wraps to the
+    // end of the buffer, which for an FFT is the same as negative time.
+    for (var i = 0; i < samples.length; i++) {
+      padded[(i - shift + n) % n] = samples[i];
+    }
 
     final spec = FFT(n).realFft(padded);
     final half = n ~/ 2;
     final freqs = Float64List(half + 1);
-    final levels = Float64List(half + 1);
+    final re = Float64List(half + 1);
+    final im = Float64List(half + 1);
     for (var k = 0; k <= half; k++) {
-      final c = spec[k];
-      final mag = math.sqrt(c.x * c.x + c.y * c.y);
       freqs[k] = k * sampleRate / n;
+      re[k] = spec[k].x;
+      im[k] = spec[k].y;
+    }
+    return (freqs, re, im);
+  }
+
+  /// Magnitude response in dB, one value per FFT bin.
+  ///
+  /// Returns (frequencies, levels). See [complexResponse] for the resolution
+  /// caveat.
+  (Float64List, Float64List) frequencyResponse({int fftSize = 16384}) {
+    final (freqs, re, im) = complexResponse(fftSize: fftSize);
+    final levels = Float64List(freqs.length);
+    for (var k = 0; k < freqs.length; k++) {
+      final mag = math.sqrt(re[k] * re[k] + im[k] * im[k]);
       levels[k] = mag <= 0 ? -160 : 20 * math.log(mag) / math.ln10;
     }
     return (freqs, levels);
@@ -203,15 +277,17 @@ class ImpulseResponse {
   /// [decayDb] picks the evaluation range: 20 gives T20 (−5 … −25 dB), 30 gives
   /// T30 (−5 … −35 dB), both extrapolated to a full 60 dB decay. The −5 dB head
   /// start is deliberate — the first few dB are the direct sound, not the room.
+  /// EDT is the exception: [startDb] 0 and [decayDb] 10, the first ten dB
+  /// including the direct sound, which is closer to what reverberance sounds
+  /// like than the late slope is.
   ///
   /// Returns null when the decay never reaches the range, which in a phone
   /// measurement usually means the noise floor got there first. That is a real
   /// answer, not a failure: it says this recording cannot support an RT60.
-  Duration? rt60({double decayDb = 20}) {
+  Duration? rt60({double decayDb = 20, double startDb = -5}) {
     final energy = schroederCurveDb();
     if (energy.isEmpty) return null;
 
-    const startDb = -5.0;
     final endDb = startDb - decayDb;
 
     final i1 = _firstIndexBelow(energy, startDb);
@@ -236,6 +312,51 @@ class ImpulseResponse {
 
     final samplesFor60 = -60 / slope;
     return Duration(microseconds: (samplesFor60 / sampleRate * 1e6).round());
+  }
+
+  /// Clarity: early-to-late energy ratio in dB, split at [early] after the
+  /// direct sound. C50 is the speech figure, C80 the music one.
+  ///
+  /// Positive means the direct sound and first reflections carry more energy
+  /// than the tail. Returns null when there is no tail at all to divide by —
+  /// a gated or synthetic response — rather than an infinite number.
+  double? clarityDb(Duration early) {
+    final direct = directSoundIndex;
+    final split = direct + _toSamples(early);
+    if (split >= samples.length) return null;
+    var earlyE = 0.0, lateE = 0.0;
+    for (var i = direct; i < samples.length; i++) {
+      final e = samples[i] * samples[i];
+      if (i < split) {
+        earlyE += e;
+      } else {
+        lateE += e;
+      }
+    }
+    if (lateE <= 0 || earlyE <= 0) return null;
+    return 10 * math.log(earlyE / lateE) / math.ln10;
+  }
+
+  /// Energy-time curve: 20·log of the envelope, in dB relative to the direct
+  /// sound, one value per [binSize]. The envelope is the peak within each bin,
+  /// which is all a decay plot needs and needs no analytic signal.
+  Float64List energyTimeCurveDb({Duration binSize = const Duration(microseconds: 100)}) {
+    final bin = math.max(1, _toSamples(binSize));
+    final direct = directSoundIndex;
+    final ref = samples[direct].abs();
+    if (ref <= 0) return Float64List(0);
+    final count = (samples.length / bin).ceil();
+    final out = Float64List(count);
+    for (var b = 0; b < count; b++) {
+      var peak = 0.0;
+      final end = math.min(samples.length, (b + 1) * bin);
+      for (var i = b * bin; i < end; i++) {
+        final a = samples[i].abs();
+        if (a > peak) peak = a;
+      }
+      out[b] = peak <= 0 ? -160 : 20 * math.log(peak / ref) / math.ln10;
+    }
+    return out;
   }
 
   /// Schroeder decay curve in dB, normalised to 0 dB at the direct sound.

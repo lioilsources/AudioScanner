@@ -101,3 +101,38 @@ List<double> bandLevelsDb(
   }
   return out;
 }
+
+/// Reduces a transfer function's magnitude (dB per FFT bin) to 1/3-octave
+/// band levels by *averaging* power across each band.
+///
+/// Not the same as [bandLevelsDb], and the difference matters. That function
+/// sums bin power, which is right for a signal's spectrum: pink noise has equal
+/// energy per octave and sums to flat bands. A transfer function is not a
+/// signal — a flat |H| = 1 must read 0 dB in every band regardless of how many
+/// bins fall into it, and summing would tilt it up by 10·log(bins per band),
+/// about 3 dB per octave. Averaging keeps a flat response flat.
+List<double> bandMeansFromTransferDb(
+  List<double> levelsDb, {
+  required double binHz,
+  double floorDb = -160,
+}) {
+  final out = <double>[];
+  for (final band in OctaveBands.all) {
+    var lo = (band.lower / binHz).ceil();
+    var hi = (band.upper / binHz).floor();
+    if (hi < lo) lo = hi = (band.center / binHz).round();
+    if (lo < 1) lo = 1;
+    if (hi >= levelsDb.length) hi = levelsDb.length - 1;
+    if (hi < lo) {
+      out.add(floorDb);
+      continue;
+    }
+    var sum = 0.0;
+    for (var k = lo; k <= hi; k++) {
+      sum += math.pow(10, levelsDb[k] / 10).toDouble();
+    }
+    final mean = sum / (hi - lo + 1);
+    out.add(mean <= 0 ? floorDb : math.max(floorDb, 10 * math.log(mean) / math.ln10));
+  }
+  return out;
+}

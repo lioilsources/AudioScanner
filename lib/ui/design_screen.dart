@@ -9,6 +9,10 @@ import '../room/room_capture.dart';
 import '../room/room_geometry.dart';
 import '../room/speaker_layout.dart';
 import '../store/session_store.dart';
+import '../export/avr_config.dart';
+import '../model/measurement.dart';
+import 'channel_measure_card.dart';
+import 'widgets/eq_preview.dart';
 
 /// Phase 5: put the geometry and the measurements together and say what to do.
 class DesignScreen extends StatefulWidget {
@@ -33,6 +37,20 @@ class _DesignScreenState extends State<DesignScreen> {
 
   DesignReport? _report;
 
+  /// Target used when no session exists yet to hold one.
+  TargetCurve _target = const TargetCurve();
+
+  void _setTarget(TargetCurve t) {
+    final session = widget.state.session;
+    setState(() {
+      _target = t;
+      session?.target = t;
+    });
+    if (session != null) widget.store?.save(session);
+    // The report is cheap; keep it in step with the slider.
+    if (_report != null) _build();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -43,21 +61,32 @@ class _DesignScreenState extends State<DesignScreen> {
     });
   }
 
-  RoomGeometry get _room =>
-      _scanned?.geometry ??
-      RoomGeometry(
-        length: _length,
-        width: _width,
-        height: _height,
-        // A measured impulse response beats the Sabine guess whenever there is
-        // one — damping drives every modal prediction below.
-        rt60: widget.state.impulseResponse
-                ?.rt60()
-                ?.inMilliseconds
-                .toDouble()
-                .let((ms) => ms / 1000) ??
-            0.4,
-      );
+  /// Reverberation time for the geometry, best source first: the mid-band
+  /// figure of the response in memory, then of the latest channel sweep on
+  /// disk, then a guess. Which one it was is shown, because every modal
+  /// prediction and the Schroeder limit hang on it.
+  (double, String) get _rt60 {
+    final live = widget.state.decayAnalysis?.midBandRt60Seconds;
+    if (live != null) return (live, 'T20 125–500 Hz z poslední odezvy');
+    final session = widget.state.session;
+    if (session != null) {
+      Measurement? latest;
+      for (final p in session.channelPoints) {
+        if (p.impulse?.midBandRt60Seconds == null) continue;
+        if (latest == null || p.timestamp.isAfter(latest.timestamp)) latest = p;
+      }
+      final stored = latest?.impulse?.midBandRt60Seconds;
+      if (stored != null) return (stored, 'T20 125–500 Hz z uloženého sweepu');
+    }
+    return (0.4, 'odhad — změř sweep, Schroeder je zatím jen tip');
+  }
+
+  RoomGeometry get _room {
+    final scanned = _scanned?.geometry;
+    final (rt60, _) = _rt60;
+    if (scanned != null) return scanned.copyWith(rt60: rt60);
+    return RoomGeometry(length: _length, width: _width, height: _height, rt60: rt60);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,6 +109,23 @@ class _DesignScreenState extends State<DesignScreen> {
           _lidarCard(),
           const SizedBox(height: 12),
           if (_scanned == null) _manualDimensions(),
+          const SizedBox(height: 12),
+          ListenableBuilder(
+            listenable: widget.state,
+            builder: (context, _) => ChannelMeasureCard(
+              state: widget.state,
+              channels: [
+                for (final s in _referenceLayout(
+                    _room, RoomPoint(_room.length * 0.62, _room.width / 2, 1.15)))
+                  s.channel,
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          TargetCurveEditor(
+            target: widget.state.session?.target ?? _target,
+            onChanged: _setTarget,
+          ),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _build,
@@ -203,7 +249,8 @@ class _DesignScreenState extends State<DesignScreen> {
       const SizedBox(height: 16),
       Text('Módy místnosti', style: t.textTheme.titleLarge),
       Text('Nad ${r.room.schroederFrequency.toStringAsFixed(0)} Hz '
-          '(Schroeder) už jednotlivé módy nedávají smysl.',
+          '(Schroeder) už jednotlivé módy nedávají smysl. '
+          'RT60 ${r.room.rt60.toStringAsFixed(2)} s: ${_rt60.$2}.',
           style: t.textTheme.bodySmall),
       const SizedBox(height: 8),
       Wrap(
@@ -227,7 +274,31 @@ class _DesignScreenState extends State<DesignScreen> {
           trailing: Text('${c.flatnessDb.toStringAsFixed(1)} dB'),
         ),
       const SizedBox(height: 16),
+      Text('EQ: změřeno, cíl, předpověď', style: t.textTheme.titleLarge),
+      Text(
+        'Předpověď je změřená odezva plus model patnácti pásem přijímače. '
+        'Po zadání EQ změř kanál znovu s přepínačem „po EQ", aby bylo vidět, '
+        'jak blízko model byl.',
+        style: t.textTheme.bodySmall,
+      ),
+      const SizedBox(height: 8),
+      for (final c in r.config.channels)
+        if (c.eq != null && c.eq!.basisCenters.isNotEmpty)
+          EqPreview(
+            label: c.channel.label,
+            eq: c.eq!,
+            verification: widget.state.session
+                ?.latestFor(c.channel.name, afterEq: true),
+            maxEqHz: math.min(300, r.room.schroederFrequency),
+          ),
+      const SizedBox(height: 16),
       Text('Konfigurace přijímače', style: t.textTheme.titleLarge),
+      if (r.config.channels.every((c) => c.eq == null))
+        Text(
+          'Bez měření kanálů sweepem je tu jen geometrie: vzdálenosti a '
+          'dělicí kmitočty. EQ a hlasitosti přibudou, až budou body per kanál.',
+          style: t.textTheme.bodySmall,
+        ),
       Card(
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -266,8 +337,9 @@ class _DesignScreenState extends State<DesignScreen> {
         room: room,
         seat: seat,
         speakers: _referenceLayout(room, seat),
-        measurements: session?.points ?? const [],
+        measurements: session?.correctedPoints ?? const [],
         forward: math.pi,
+        target: session?.target ?? _target,
       );
     });
   }
@@ -323,8 +395,4 @@ class _DesignScreenState extends State<DesignScreen> {
     await SharePlus.instance.share(
         ShareParams(files: [XFile(f.path)], subject: 'Návrh konfigurace'));
   }
-}
-
-extension<T> on T {
-  R let<R>(R Function(T) f) => f(this);
 }

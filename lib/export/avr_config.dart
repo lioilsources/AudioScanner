@@ -48,6 +48,47 @@ class TargetCurve {
   /// themselves rather than take it on trust.
   static const flat = TargetCurve(bassLiftDb: 0, tiltDbPerOctave: 0);
 
+  bool get isFlat => bassLiftDb == 0 && tiltDbPerOctave == 0;
+
+  TargetCurve copyWith({
+    double? bassLiftDb,
+    double? bassLiftBelowHz,
+    double? tiltDbPerOctave,
+    double? tiltAboveHz,
+  }) =>
+      TargetCurve(
+        bassLiftDb: bassLiftDb ?? this.bassLiftDb,
+        bassLiftBelowHz: bassLiftBelowHz ?? this.bassLiftBelowHz,
+        tiltDbPerOctave: tiltDbPerOctave ?? this.tiltDbPerOctave,
+        tiltAboveHz: tiltAboveHz ?? this.tiltAboveHz,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'bassLiftDb': bassLiftDb,
+        'bassLiftBelowHz': bassLiftBelowHz,
+        'tiltDbPerOctave': tiltDbPerOctave,
+        'tiltAboveHz': tiltAboveHz,
+      };
+
+  factory TargetCurve.fromJson(Map<String, dynamic> j) => TargetCurve(
+        bassLiftDb: (j['bassLiftDb'] as num?)?.toDouble() ?? 4,
+        bassLiftBelowHz: (j['bassLiftBelowHz'] as num?)?.toDouble() ?? 80,
+        tiltDbPerOctave: (j['tiltDbPerOctave'] as num?)?.toDouble() ?? -0.8,
+        tiltAboveHz: (j['tiltAboveHz'] as num?)?.toDouble() ?? 1000,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is TargetCurve &&
+      other.bassLiftDb == bassLiftDb &&
+      other.bassLiftBelowHz == bassLiftBelowHz &&
+      other.tiltDbPerOctave == tiltDbPerOctave &&
+      other.tiltAboveHz == tiltAboveHz;
+
+  @override
+  int get hashCode =>
+      Object.hash(bassLiftDb, bassLiftBelowHz, tiltDbPerOctave, tiltAboveHz);
+
   double levelAt(double hz) {
     var db = 0.0;
     if (hz < bassLiftBelowHz) {
@@ -64,11 +105,26 @@ class TargetCurve {
 
 /// One channel's generated equaliser preset.
 class EqPreset {
-  const EqPreset({required this.bands, required this.gainsDb, this.notes = const []});
+  const EqPreset({
+    required this.bands,
+    required this.gainsDb,
+    this.notes = const [],
+    this.basisCenters = const [],
+    this.basisDb = const [],
+    this.targetDb = const [],
+  });
 
   final List<double> bands;
   final List<double> gainsDb;
   final List<String> notes;
+
+  /// What the preset was computed from, anchored at the midband: the measured
+  /// levels per [basisCenters] relative to 1 kHz, and the target at the same
+  /// frequencies. Kept so a preview can draw measured, target and predicted
+  /// on the same axis without re-deriving the anchor.
+  final List<double> basisCenters;
+  final List<double> basisDb;
+  final List<double> targetDb;
 }
 
 /// Turns a measured response into an Integra preset.
@@ -83,6 +139,13 @@ class EqPreset {
 /// 3. Leave everything above [maxEqHz] alone. Above the Schroeder frequency
 ///    a single-point measurement describes that one point, not the room;
 ///    equalising it makes every other seat worse.
+///
+/// [spreadBandsDb], when given, is how much each band varied between the
+/// measured positions around the seat. A band that swings by more than
+/// [spreadLimitDb] from one point to the next is position, not room: the
+/// correction there is halved and noted, because a full cut for one seat is
+/// a full boost for the next one over. This is the part of a multi-position
+/// system worth having even with a single microphone.
 EqPreset generateEq({
   required List<double> measuredBandsDb,
   required List<double> measuredBandCenters,
@@ -91,6 +154,8 @@ EqPreset generateEq({
   double maxBoostDb = 3,
   double maxEqHz = 300,
   double? referenceLevelDb,
+  List<double>? spreadBandsDb,
+  double spreadLimitDb = 6,
 }) {
   // Anchor at the midband so the preset corrects shape and leaves overall
   // level to the channel trim, which has far more range.
@@ -99,6 +164,11 @@ EqPreset generateEq({
 
   final gains = <double>[];
   final notes = <String>[];
+  final basis = [
+    for (final c in measuredBandCenters)
+      _interpolate(measuredBandCenters, measuredBandsDb, c) - anchor
+  ];
+  final targetLevels = [for (final c in measuredBandCenters) target.levelAt(c)];
 
   for (final hz in outputBands) {
     if (hz > maxEqHz) {
@@ -108,6 +178,17 @@ EqPreset generateEq({
     final measured =
         _interpolate(measuredBandCenters, measuredBandsDb, hz) - anchor;
     var correction = target.levelAt(hz) - measured;
+
+    if (spreadBandsDb != null) {
+      final spread = _interpolate(measuredBandCenters, spreadBandsDb, hz);
+      if (spread > spreadLimitDb && correction.abs() >= integraEqStepDb) {
+        correction /= 2;
+        notes.add('${_hz(hz)}: mezi místy kolem posluchače se liší o '
+            '${spread.toStringAsFixed(1)} dB — je to poloha, ne místnost. '
+            'Korekce jen z poloviny; plná by jedno místo spravila a vedlejší '
+            'rozbila.');
+      }
+    }
 
     if (correction > maxBoostDb) {
       if (correction > maxBoostDb + 3) {
@@ -121,7 +202,14 @@ EqPreset generateEq({
     gains.add((correction / integraEqStepDb).round() * integraEqStepDb);
   }
 
-  return EqPreset(bands: outputBands, gainsDb: gains, notes: notes);
+  return EqPreset(
+    bands: outputBands,
+    gainsDb: gains,
+    notes: notes,
+    basisCenters: measuredBandCenters,
+    basisDb: basis,
+    targetDb: targetLevels,
+  );
 }
 
 double _interpolate(List<double> xs, List<double> ys, double x) {

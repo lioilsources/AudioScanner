@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
+import 'package:audio_scanner/dsp/octave_bands.dart';
 import 'package:audio_scanner/export/avr_config.dart';
+import 'package:audio_scanner/model/measurement.dart';
 import 'package:audio_scanner/room/design_report.dart';
 import 'package:audio_scanner/room/placement.dart';
 import 'package:audio_scanner/room/room_capture.dart';
@@ -401,6 +403,111 @@ void main() {
       expect(report.subwooferCandidates, isNotEmpty);
       expect(report.subwooferCandidates.first.flatnessDb,
           lessThan(report.subwooferCandidates.last.flatnessDb + 1));
+    });
+
+    Measurement seatPoint(String id, {String? channel, double hump = 8, double level = -30}) {
+      // Flat at level, with a hump at 63 Hz the EQ has to notice.
+      final bands = List<double>.filled(OctaveBands.all.length, level);
+      bands[OctaveBands.all.indexWhere((b) => b.nominal == 63)] = level + hump;
+      return Measurement(
+        id: id,
+        position: Vec3.zero,
+        timestamp: DateTime.utc(2026, 9, 29),
+        bandsDb: bands,
+        rmsDbfs: level,
+        channel: channel,
+      );
+    }
+
+    test('matches a measurement to its channel by the channel field, not the id',
+        () {
+      // Regression: points are called p1, p2 … and a lookup by id never hit a
+      // channel name, so no real session ever got an EQ.
+      final report = buildDesignReport(
+        room: room(),
+        seat: const RoomPoint(4.6, 2.45, 1.15),
+        speakers: layout(),
+        forward: math.pi,
+        measurements: [seatPoint('p1', channel: 'frontLeft')],
+      );
+      final fl = report.config.channels
+          .firstWhere((c) => c.channel == Channel.frontLeft);
+      final fr = report.config.channels
+          .firstWhere((c) => c.channel == Channel.frontRight);
+      expect(fl.eq, isNotNull);
+      expect(fl.eq!.gainsDb[fl.eq!.bands.indexOf(63)], lessThan(-3));
+      expect(fr.eq, isNull);
+    });
+
+    test('a point without a channel never feeds an EQ', () {
+      final report = buildDesignReport(
+        room: room(),
+        seat: const RoomPoint(4.6, 2.45, 1.15),
+        speakers: layout(),
+        forward: math.pi,
+        measurements: [seatPoint('frontLeft')],
+      );
+      for (final c in report.config.channels) {
+        expect(c.eq, isNull);
+      }
+    });
+
+    test('level trims pull every measured channel toward their mean', () {
+      final report = buildDesignReport(
+        room: room(),
+        seat: const RoomPoint(4.6, 2.45, 1.15),
+        speakers: layout(),
+        forward: math.pi,
+        measurements: [
+          seatPoint('p1', channel: 'frontLeft', level: -30),
+          seatPoint('p2', channel: 'frontRight', level: -34),
+        ],
+      );
+      double trim(Channel ch) =>
+          report.config.channels.firstWhere((c) => c.channel == ch).levelDb;
+      // Energy mean of −30 and −34 is about −31.5: the loud one comes down,
+      // the quiet one goes up, an unmeasured channel stays untouched.
+      expect(trim(Channel.frontLeft), lessThan(0));
+      expect(trim(Channel.frontRight), greaterThan(0));
+      expect(trim(Channel.frontRight) - trim(Channel.frontLeft), closeTo(4, 0.6));
+      expect(trim(Channel.center), 0);
+    });
+
+    test('repeated sweeps of a channel average; verification passes stay out',
+        () {
+      final older = seatPoint('p1', channel: 'frontLeft', hump: 8);
+      final newer = Measurement(
+        id: 'p2',
+        position: Vec3.zero,
+        timestamp: DateTime.utc(2026, 9, 30),
+        bandsDb: List<double>.filled(OctaveBands.all.length, -30),
+        rmsDbfs: -30,
+        channel: 'frontLeft',
+      );
+      final verify = Measurement(
+        id: 'p3',
+        position: Vec3.zero,
+        timestamp: DateTime.utc(2026, 10, 1),
+        bandsDb: seatPoint('x', hump: 20).bandsDb,
+        rmsDbfs: -30,
+        channel: 'frontLeft',
+        afterEq: true,
+      );
+      final report = buildDesignReport(
+        room: room(),
+        seat: const RoomPoint(4.6, 2.45, 1.15),
+        speakers: layout(),
+        forward: math.pi,
+        measurements: [older, verify, newer],
+      );
+      final fl = report.config.channels
+          .firstWhere((c) => c.channel == Channel.frontLeft);
+      final cut = fl.eq!.gainsDb[fl.eq!.bands.indexOf(63)];
+      // Energy mean of a +8 dB hump and a flat point is a hump of about
+      // 4.6 dB: the cut lands between the two, and the +20 dB verification
+      // point plays no part in it.
+      expect(cut, lessThan(-3));
+      expect(cut, greaterThan(-6));
     });
 
     test('the rendered sheet names the Schroeder limit rather than hiding it',

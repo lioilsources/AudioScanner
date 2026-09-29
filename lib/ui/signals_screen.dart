@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../room/speaker_layout.dart';
 import '../signal/log_sweep.dart';
 import '../signal/pink_noise.dart';
 import '../signal/wav.dart';
@@ -26,6 +27,9 @@ class _SignalsScreenState extends State<SignalsScreen> {
   double _startHz = 20;
   double _endHz = 20000;
   bool _busy = false;
+
+  /// Channel the sweep is meant for; null is a plain mono file.
+  Channel? _channel;
 
   @override
   Widget build(BuildContext context) {
@@ -75,26 +79,37 @@ class _SignalsScreenState extends State<SignalsScreen> {
                     onChanged: (v) => setState(() => _endHz = v),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
+                  Row(
                     children: [
-                      FilledButton.tonal(
-                        onPressed: _busy ? null : () => _exportSweep(null),
-                        child: const Text('Mono'),
+                      Expanded(
+                        child: DropdownButton<Channel?>(
+                          value: _channel,
+                          isExpanded: true,
+                          items: [
+                            const DropdownMenuItem<Channel?>(
+                              value: null,
+                              child: Text('Mono (bez kanálu)'),
+                            ),
+                            for (final ch in Channel.values)
+                              DropdownMenuItem<Channel?>(
+                                value: ch,
+                                child: Text(ch.label),
+                              ),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (v) => setState(() => _channel = v),
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       FilledButton.tonal(
-                        onPressed: _busy ? null : () => _exportSweep(true),
-                        child: const Text('Jen levá'),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: _busy ? null : () => _exportSweep(false),
-                        child: const Text('Jen pravá'),
+                        onPressed: _busy ? null : _exportSweep,
+                        child: const Text('Export WAV'),
                       ),
                     ],
                   ),
                   Text(
-                    'Levá a pravá zvlášť — jinak se obě bedny sečtou a jejich '
-                    'rozdíl zmizí v součtu.',
+                    _channelNote(_channel),
                     style: t.textTheme.bodySmall,
                   ),
                 ],
@@ -151,24 +166,51 @@ class _SignalsScreenState extends State<SignalsScreen> {
     );
   }
 
-  Future<void> _exportSweep(bool? left) async {
+  /// Front L and R go out as one side of a stereo file, which any player
+  /// routes correctly. Every other channel is a mono file named for the
+  /// channel: a 12-channel WAV that a laptop's stereo output cannot play
+  /// would only look complete. Route the mono file to the right input from a
+  /// DAW, or through the receiver's multichannel input.
+  Future<void> _exportSweep() async {
     final sweep = LogSweep(
       startHz: _startHz,
       endHz: _endHz,
       duration: Duration(milliseconds: (_seconds * 1000).round()),
     );
     final mono = sweep.generate();
-    final name = left == null
-        ? 'sweep_${_startHz.round()}-${_endHz.round()}_${_seconds.round()}s.wav'
-        : 'sweep_${left ? "L" : "R"}_${_seconds.round()}s.wav';
-    final bytes = left == null
-        ? Wav.pcm16(samples: mono, sampleRate: sweep.sampleRate.round())
-        : Wav.pcm16(
-            samples: Wav.toStereo(mono, left: left),
-            sampleRate: sweep.sampleRate.round(),
-            channels: 2,
-          );
+    final ch = _channel;
+    final rate = sweep.sampleRate.round();
+    final String name;
+    final List<int> bytes;
+    if (ch == null) {
+      name = 'sweep_${_startHz.round()}-${_endHz.round()}_${_seconds.round()}s.wav';
+      bytes = Wav.pcm16(samples: mono, sampleRate: rate);
+    } else if (ch == Channel.frontLeft || ch == Channel.frontRight) {
+      name = 'sweep_${ch.name}_${_seconds.round()}s.wav';
+      bytes = Wav.pcm16(
+        samples: Wav.toStereo(mono, left: ch == Channel.frontLeft),
+        sampleRate: rate,
+        channels: 2,
+      );
+    } else {
+      name = 'sweep_${ch.name}_${_seconds.round()}s.wav';
+      bytes = Wav.pcm16(samples: mono, sampleRate: rate);
+    }
     await _shareBytes(name, bytes);
+  }
+
+  static String _channelNote(Channel? ch) {
+    if (ch == null) {
+      return 'Mono do obou beden najednou sečte L a R a jejich rozdíl zmizí '
+          'v součtu. Pro měření kanálů vyber kanál.';
+    }
+    if (ch == Channel.frontLeft || ch == Channel.frontRight) {
+      return 'Stereo soubor se signálem jen v jednom kanálu — pustí ho '
+          'cokoli, co hraje stereo.';
+    }
+    return 'Mono soubor pojmenovaný podle kanálu. Nasměruj ho na správný '
+        'vstup přijímače z DAW nebo přes vícekanálový vstup; laptop se '
+        'stereo výstupem ho na tenhle kanál nedostane.';
   }
 
   Future<void> _exportPink() async {

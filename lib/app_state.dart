@@ -3,12 +3,15 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import 'analysis/decay_analysis.dart';
 import 'ar/ar_tracking.dart';
 import 'audio/audio_capture.dart';
+import 'dsp/distortion.dart';
 import 'dsp/impulse_response.dart';
 import 'dsp/octave_bands.dart';
 import 'dsp/spectrum.dart';
 import 'model/measurement.dart';
+import 'model/mic_calibration.dart';
 import 'model/session.dart';
 import 'signal/log_sweep.dart';
 import 'store/session_store.dart';
@@ -42,6 +45,24 @@ class AppState extends ChangeNotifier {
   Spectrum? _spectrum;
   Spectrum? get spectrum => _spectrum;
 
+  /// Peak hold and max/min traces of the live analyser.
+  final PeakHold hold = PeakHold(OctaveBands.all.length);
+  DateTime? _lastBlockAt;
+
+  /// While frozen the analyser display stops updating; capture, sweep
+  /// recording and averaging carry on underneath.
+  bool _frozen = false;
+  bool get frozen => _frozen;
+  void setFrozen(bool v) {
+    _frozen = v;
+    notifyListeners();
+  }
+
+  void resetHold() {
+    hold.reset();
+    notifyListeners();
+  }
+
   CaptureStatus? _captureStatus;
   CaptureStatus? get captureStatus => _captureStatus;
 
@@ -59,12 +80,58 @@ class AppState extends ChangeNotifier {
   Session? _session;
   Session? get session => _session;
 
-  /// Reference levels the map is quoted against — the first point taken.
-  List<double>? get referenceBands => _session?.reference?.bandsDb;
+  /// Reference levels the map is quoted against — the first point taken,
+  /// corrected the same way the live bars are.
+  List<double>? get referenceBands {
+    final ref = _session?.reference;
+    return ref == null ? null : _session!.correctedBands(ref.bandsDb);
+  }
 
   Future<void> attachStore(SessionStore store) async {
     _store = store;
+    _calibration = await store.loadCalibration();
+    notifyListeners();
   }
+
+  // --- calibration --------------------------------------------------------
+
+  MicCalibration? _calibration;
+  double _splOffsetDb = 0;
+
+  /// The calibration in force: the session's, else the app-level one that
+  /// new sessions inherit.
+  MicCalibration? get calibration => _session?.calibration ?? _calibration;
+  double get splOffsetDb => _session?.calibrationOffsetDb ?? _splOffsetDb;
+
+  Future<void> setCalibration(MicCalibration? cal) async {
+    _calibration = cal;
+    _session?.calibration = cal;
+    await _store?.saveCalibration(cal);
+    final session = _session;
+    if (session != null) await _store?.save(session);
+    notifyListeners();
+  }
+
+  Future<void> setSplOffset(double db) async {
+    _splOffsetDb = db;
+    _session?.calibrationOffsetDb = db;
+    final session = _session;
+    if (session != null) await _store?.save(session);
+    notifyListeners();
+  }
+
+  /// A throwaway session carrying the current corrections, for screens that
+  /// need to correct a curve before any session exists.
+  Session get correctionContext =>
+      _session ??
+      Session(
+        id: '-',
+        name: '-',
+        createdAt: DateTime.now(),
+        signal: ExcitationSignal.externalSweep,
+        calibrationOffsetDb: _splOffsetDb,
+        calibration: _calibration,
+      );
 
   /// Averaging in progress for a "measure here" tap.
   BandAverager? _averager;
@@ -166,8 +233,35 @@ class AppState extends ChangeNotifier {
     }
     _impulseResponse =
         deconvolveSweep(recording: List<double>.of(_recording), sweep: sweep);
+    _lastSweep = sweep;
     notifyListeners();
     return _impulseResponse;
+  }
+
+  LogSweep? _lastSweep;
+  List<HarmonicLevel>? _distortion;
+  ImpulseResponse? _distortionOf;
+
+  /// Harmonic distortion of the current response, computed on first use.
+  /// Empty when the response did not come from a sweep taken in this run.
+  List<HarmonicLevel> get distortion {
+    final ir = _impulseResponse;
+    final sweep = _lastSweep;
+    if (ir == null || sweep == null) return const [];
+    if (_distortion != null && identical(_distortionOf, ir)) return _distortion!;
+    _distortionOf = ir;
+    return _distortion = harmonicDistortion(ir, sweep);
+  }
+
+  DecayAnalysis? _decay;
+
+  /// Band decay figures of the current response, computed on first use.
+  DecayAnalysis? get decayAnalysis {
+    final ir = _impulseResponse;
+    if (ir == null) return null;
+    final d = _decay;
+    if (d != null && d.matches(ir)) return d;
+    return _decay = DecayAnalysis.of(ir);
   }
 
   double get recordedSeconds =>
@@ -186,7 +280,12 @@ class AppState extends ChangeNotifier {
 
     for (final frame in assembler.add(samples)) {
       final s = analyzer.analyze(frame);
-      _spectrum = s;
+      if (!_frozen) {
+        _spectrum = s;
+        final now = DateTime.now();
+        hold.update(s.bandsDb, _lastBlockAt == null ? Duration.zero : now.difference(_lastBlockAt!));
+        _lastBlockAt = now;
+      }
       final avg = _averager;
       if (avg != null) {
         avg.add(s.bandsDb);
@@ -209,6 +308,8 @@ class AppState extends ChangeNotifier {
       createdAt: DateTime.now(),
       signal: signal,
       sampleRate: _captureStatus?.sampleRate ?? 48000,
+      calibrationOffsetDb: _splOffsetDb,
+      calibration: _calibration,
     );
     _session = s;
     await _store?.save(s);
@@ -221,15 +322,26 @@ class AppState extends ChangeNotifier {
   /// Refuses while tracking is not normal: a point with a wrong position is
   /// worse than a missing one, because the heatmap will smear it across
   /// everything nearby and there is no way to tell afterwards.
+  ///
+  /// [requirePose] false stores the point at the origin when tracking is not
+  /// running — for a snapshot from the analyser, which wants the spectrum
+  /// kept and has no map to be wrong on. Such a point is a snapshot, not a
+  /// walk point, and is tagged with a note saying so.
   Future<Measurement?> measureHere({
     Duration duration = const Duration(seconds: 3),
     String? note,
+    bool requirePose = true,
   }) async {
-    final session = _session;
+    final session = _session ??
+        (requirePose
+            ? null
+            : await beginSession(
+                name: 'Snímky', signal: ExcitationSignal.externalPinkNoise));
     if (session == null || !_listening) return null;
 
     final p = _pose;
-    if (p == null || !p.quality.usableForMeasurement) {
+    final poseOk = p != null && p.quality.usableForMeasurement;
+    if (requirePose && !poseOk) {
       _error = p?.hint ??
           'Sledování polohy není spolehlivé — bod by seděl jinde, než stojíš.';
       notifyListeners();
@@ -253,20 +365,130 @@ class AppState extends ChangeNotifier {
 
     final point = Measurement(
       id: 'p${session.points.length + 1}',
-      position: _pose?.position ?? p.position,
+      position: poseOk ? (_pose?.position ?? p.position) : Vec3.zero,
       timestamp: DateTime.now(),
       bandsDb: avg.meanDb,
       rmsDbfs: _averagedRmsCount == 0
           ? -160
           : 10 * math.log(_averagedRms / _averagedRmsCount) / math.ln10,
-      arAccuracy: p.quality.name,
-      note: note,
+      arAccuracy: poseOk ? p.quality.name : null,
+      note: note ?? (poseOk ? null : 'snímek z analyzátoru, bez polohy'),
     );
     session.points.add(point);
     await _store?.save(session);
     notifyListeners();
     return point;
   }
+
+  /// Stores the last deconvolved sweep as a measurement for [channel].
+  ///
+  /// The point's band levels come from the *whole* response, one second of
+  /// it: below the Schroeder frequency the EQ has to see the room, not just
+  /// the speaker, and that is where the EQ works. The gated bands live in the
+  /// summary for the comparisons that want the speaker alone.
+  ///
+  /// Position is the AR pose when tracking is usable and the origin when it
+  /// is not — channel measurements are taken from the seat and the design
+  /// report does not need to know where the seat is in AR space, only that
+  /// every channel was measured from the same place.
+  ///
+  /// With [replace] the channel's earlier points of the same kind are
+  /// dropped first: a re-measurement after moving a speaker must not be
+  /// averaged with the response the speaker no longer has. Without it the
+  /// new point is one more sweep to average, which is the way to beat the
+  /// noise of a single take.
+  Future<Measurement?> addSweepMeasurement({
+    required String channel,
+    bool afterEq = false,
+    bool replace = false,
+    Duration gate = const Duration(milliseconds: 5),
+  }) async {
+    final ir = _impulseResponse;
+    if (ir == null) return null;
+    final session = _session ??
+        await beginSession(
+            name: 'Kanály', signal: ExcitationSignal.externalSweep);
+
+    if (replace) {
+      final stale = session.points
+          .where((p) => p.channel == channel && p.afterEq == afterEq)
+          .toList();
+      for (final p in stale) {
+        session.points.remove(p);
+        final file = p.impulse?.file;
+        if (file != null) {
+          _impulseCache.remove(file);
+          await _store?.deleteImpulse(file);
+        }
+      }
+    }
+
+    final room = ir.gated(window: const Duration(seconds: 1));
+    final (freqs, levels) = room.frequencyResponse();
+    final bands = bandMeansFromTransferDb(levels, binHz: freqs[1]);
+
+    // Ids stay unique after removals: count up from the largest seen, not
+    // from the current length.
+    var maxId = 0;
+    for (final p in session.points) {
+      final n = int.tryParse(p.id.replaceFirst('p', ''));
+      if (n != null && n > maxId) maxId = n;
+    }
+    final id = 'p${maxId + 1}';
+    String? file;
+    final store = _store;
+    if (store != null) {
+      file = await store.writeImpulse(session.id, id, ir);
+    }
+
+    final p = _pose;
+    final point = Measurement(
+      id: id,
+      position: (p != null && p.quality.usableForMeasurement)
+          ? p.position
+          : Vec3.zero,
+      timestamp: DateTime.now(),
+      bandsDb: bands,
+      rmsDbfs: _broadbandDb(bands),
+      arAccuracy: p?.quality.name,
+      channel: channel,
+      afterEq: afterEq,
+      impulse: ImpulseSummary.from(ir,
+          gate: gate,
+          file: file,
+          midBandRt60Seconds: decayAnalysis?.midBandRt60Seconds),
+    );
+    session.points.add(point);
+    await store?.save(session);
+    notifyListeners();
+    return point;
+  }
+
+  /// Energy mean of the bands between 100 Hz and 4 kHz: the level a receiver's
+  /// pink-noise calibration would settle on, minus the extremes where a phone
+  /// microphone and a room disagree the most.
+  static double _broadbandDb(List<double> bands) {
+    var sum = 0.0;
+    var n = 0;
+    for (var i = 0; i < OctaveBands.all.length; i++) {
+      final f = OctaveBands.all[i].nominal;
+      if (f < 100 || f > 4000) continue;
+      sum += math.pow(10, bands[i] / 10).toDouble();
+      n++;
+    }
+    return n == 0 || sum <= 0 ? -160 : 10 * math.log(sum / n) / math.ln10;
+  }
+
+  /// Loads the full impulse response behind a point, if it has one on disk.
+  Future<ImpulseResponse?> impulseFor(Measurement m) async {
+    final file = m.impulse?.file;
+    final store = _store;
+    if (file == null || store == null) return null;
+    return _impulseCache[file] ??= (await store.readImpulse(file)) ??
+        ImpulseResponse(samples: Float64List(0), sampleRate: 48000);
+  }
+
+  final _impulseCache = <String, ImpulseResponse>{};
 
   /// Distance from the last stored point — drives the "every 0.5 m" continuous
   /// mode from the plan.

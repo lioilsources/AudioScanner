@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../dsp/octave_bands.dart';
+import '../model/mic_calibration.dart';
 import 'widgets/spectrum_bars.dart';
 
 /// Phase 1: the live analyser.
@@ -19,6 +23,97 @@ class RtaScreen extends StatefulWidget {
 }
 
 class _RtaScreenState extends State<RtaScreen> {
+  bool _showPeak = true;
+  bool _showEnvelope = false;
+  bool _saving = false;
+
+  Future<void> _saveSnapshot() async {
+    final s = widget.state;
+    setState(() => _saving = true);
+    try {
+      final wasFrozen = s.frozen;
+      // A snapshot averages three seconds of live audio, so unfreeze the
+      // averager's source for the duration and put the display back after.
+      if (wasFrozen) s.setFrozen(false);
+      final point = await s.measureHere(requirePose: false);
+      if (wasFrozen) s.setFrozen(true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(point == null
+            ? (s.error ?? 'Snímek se neuložil.')
+            : 'Uloženo jako bod ${point.id}'
+                '${point.arAccuracy == null ? ' (bez polohy)' : ''}.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _importCalibration() async {
+    final s = widget.state;
+    final picked = await FilePicker.pickFiles(type: FileType.any);
+    if (picked.isEmpty || !mounted) return;
+    final path = picked.first.path;
+    if (path == null) return;
+    try {
+      final text = await File(path).readAsString();
+      final name = path.split(Platform.pathSeparator).last;
+      final cal = MicCalibration.parse(text, name: name);
+      await s.setCalibration(cal);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Kalibrace $name: ${cal.points.length} bodů, '
+            '${cal.minDb.toStringAsFixed(1)} … ${cal.maxDb.toStringAsFixed(1)} dB'),
+      ));
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Soubor nejde přečíst: ${e.message}')));
+    }
+  }
+
+  Future<void> _editOffset() async {
+    final s = widget.state;
+    final controller =
+        TextEditingController(text: s.splOffsetDb.toStringAsFixed(1));
+    final value = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Offset dB SPL'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Pusť tón 1 kHz, odečti hladinu na SPL metru a zadej rozdíl '
+              'proti tomu, co ukazuje analyzátor. S nenulovým offsetem se '
+              'hladiny značí jako odhad SPL; bez něj zůstávají dBFS.',
+            ),
+            TextField(
+              controller: controller,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true, signed: true),
+              decoration: const InputDecoration(suffixText: 'dB'),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 0.0),
+              child: const Text('Vynulovat')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Zrušit')),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+                ctx, double.tryParse(controller.text.replaceAll(',', '.'))),
+            child: const Text('Uložit'),
+          ),
+        ],
+      ),
+    );
+    if (value != null) await s.setSplOffset(value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -27,6 +122,8 @@ class _RtaScreenState extends State<RtaScreen> {
         final s = widget.state;
         final spectrum = s.spectrum;
         final status = s.captureStatus;
+        final ctx = s.correctionContext;
+        final cal = s.calibration;
 
         return Scaffold(
           appBar: AppBar(
@@ -37,6 +134,44 @@ class _RtaScreenState extends State<RtaScreen> {
                 tooltip: s.listening ? 'Zastavit' : 'Spustit mikrofon',
                 onPressed: () =>
                     s.listening ? s.stopListening() : s.startListening(),
+              ),
+              IconButton(
+                icon: Icon(s.frozen ? Icons.play_circle_outline : Icons.pause_circle_outline),
+                tooltip: s.frozen ? 'Rozmrazit' : 'Zmrazit',
+                onPressed: s.listening ? () => s.setFrozen(!s.frozen) : null,
+              ),
+              PopupMenuButton<String>(
+                onSelected: (v) => switch (v) {
+                  'cal' => _importCalibration(),
+                  'nocal' => s.setCalibration(null),
+                  'offset' => _editOffset(),
+                  'peak' => setState(() => _showPeak = !_showPeak),
+                  'env' => setState(() => _showEnvelope = !_showEnvelope),
+                  'reset' => s.resetHold(),
+                  'save' => _saveSnapshot(),
+                  _ => null,
+                },
+                itemBuilder: (_) => [
+                  CheckedPopupMenuItem(
+                      value: 'peak', checked: _showPeak, child: const Text('Peak hold')),
+                  CheckedPopupMenuItem(
+                      value: 'env',
+                      checked: _showEnvelope,
+                      child: const Text('Stopy max / min')),
+                  const PopupMenuItem(value: 'reset', child: Text('Vynulovat stopy')),
+                  PopupMenuItem(
+                      value: 'save',
+                      enabled: s.listening && !_saving,
+                      child: const Text('Uložit jako bod (3 s)')),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                      value: 'cal', child: Text('Kalibrace mikrofonu…')),
+                  if (cal != null)
+                    const PopupMenuItem(
+                        value: 'nocal', child: Text('Odebrat kalibraci')),
+                  const PopupMenuItem(
+                      value: 'offset', child: Text('Offset dB SPL…')),
+                ],
               ),
             ],
           ),
@@ -54,26 +189,50 @@ class _RtaScreenState extends State<RtaScreen> {
                     text: '${status.route} · '
                         '${status.sampleRate.toStringAsFixed(0)} Hz · bez úprav signálu',
                   ),
+                if (cal != null)
+                  _Chip(
+                    icon: Icons.tune,
+                    text: 'Kalibrace ${cal.name}: ${cal.points.length} bodů, '
+                        'korekce ${(-cal.maxDb).toStringAsFixed(1)} … '
+                        '${(-cal.minDb).toStringAsFixed(1)} dB',
+                  ),
                 const SizedBox(height: 12),
                 _LevelRow(
-                  rmsDbfs: spectrum?.rmsDbfs,
+                  rmsDbfs: spectrum == null
+                      ? null
+                      : spectrum.rmsDbfs + ctx.calibrationOffsetDb,
                   listening: s.listening,
+                  unit: ctx.hasSplOffset ? 'dB SPL (odhad)' : 'dBFS',
                 ),
                 const SizedBox(height: 12),
                 Expanded(
                   child: spectrum == null
                       ? const _Placeholder()
                       : SpectrumBars(
-                          bandsDb: spectrum.bandsDb,
+                          bandsDb: ctx.correctedBands(spectrum.bandsDb),
                           reference: s.referenceBands,
+                          minDb: -90 + ctx.calibrationOffsetDb,
+                          maxDb: -10 + ctx.calibrationOffsetDb,
+                          peak: _showPeak && s.hold.hasData
+                              ? ctx.correctedBands(s.hold.peakDb)
+                              : null,
+                          maxTrace: _showEnvelope && s.hold.hasData
+                              ? ctx.correctedBands(s.hold.maxDb)
+                              : null,
+                          minTrace: _showEnvelope && s.hold.hasData
+                              ? ctx.correctedBands(s.hold.minDb)
+                              : null,
                         ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  s.referenceBands == null
-                      ? 'Hladiny jsou relativní (dBFS). Obrys se objeví, až '
-                          'uložíš první bod — ten je referencí pro ostatní.'
-                      : 'Plné sloupce = tady. Obrys = referenční bod.',
+                  s.frozen
+                      ? 'Zmrazeno — mikrofon běží dál, jen se nekreslí.'
+                      : s.referenceBands == null
+                          ? 'Hladiny jsou relativní (dBFS). Obrys se objeví, až '
+                              'uložíš první bod — ten je referencí pro ostatní.'
+                          : 'Plné sloupce = tady. Obrys = referenční bod.'
+                              '${_showEnvelope ? ' Červená = max, zelená = min od vynulování.' : ''}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -86,10 +245,15 @@ class _RtaScreenState extends State<RtaScreen> {
 }
 
 class _LevelRow extends StatelessWidget {
-  const _LevelRow({required this.rmsDbfs, required this.listening});
+  const _LevelRow({
+    required this.rmsDbfs,
+    required this.listening,
+    this.unit = 'dBFS',
+  });
 
   final double? rmsDbfs;
   final bool listening;
+  final String unit;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +273,7 @@ class _LevelRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text('dBFS', style: t.textTheme.titleMedium),
+        Text(unit, style: t.textTheme.titleMedium),
         const Spacer(),
         if (!listening)
           Text('mikrofon stojí', style: t.textTheme.bodySmall)

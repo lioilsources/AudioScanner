@@ -66,6 +66,19 @@ class RoomGeometry {
     this.arYaw = 0,
   });
 
+  /// The same room with a different reverberation time — the one field a
+  /// later measurement can improve on a scanned geometry.
+  RoomGeometry copyWith({double? rt60}) => RoomGeometry(
+        length: length,
+        width: width,
+        height: height,
+        irregularity: irregularity,
+        rt60: rt60 ?? this.rt60,
+        source: source,
+        arOrigin: arOrigin,
+        arYaw: arYaw,
+      );
+
   /// Longest floor dimension, metres.
   final double length;
 

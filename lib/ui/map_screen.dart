@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../analysis/heatmap.dart';
+import '../analysis/response_analysis.dart';
 import '../app_state.dart';
 import '../dsp/octave_bands.dart';
 import '../export/frd.dart';
@@ -34,7 +35,7 @@ class _MapScreenState extends State<MapScreen> {
       listenable: widget.state,
       builder: (context, _) {
         final session = widget.state.session;
-        final points = session?.points ?? const <Measurement>[];
+        final points = session?.correctedMapPoints ?? const <Measurement>[];
         final band = OctaveBands.all[_bandIndex];
 
         return Scaffold(
@@ -106,6 +107,31 @@ class _MapScreenState extends State<MapScreen> {
           FrdExport.fromMeasurement(p, session: session),
         );
         files.add(XFile(f.path));
+
+        // Points with a stored sweep also get the full-resolution gated
+        // response with phase, and the raw impulse for anyone who wants to
+        // redo the analysis elsewhere.
+        final irFile = p.impulse?.file;
+        if (irFile == null) continue;
+        final ir = await store.readImpulse(irFile);
+        if (ir == null) continue;
+        final a = ResponseAnalysis.of(ir,
+            gate: Duration(microseconds: (p.impulse!.gateMs * 1000).round()));
+        final gated = await store.writeExport(
+          '${_slug(session.name)}_${p.id}_gated.frd',
+          FrdExport.fromImpulseResponse(
+            frequencies: a.frequencies,
+            magnitudesDb: session.correctedCurve(a.frequencies, a.gatedDb),
+            phasesDeg: FrdExport.phaseDegrees(a.gatedRe, a.gatedIm),
+            session: session,
+            point: p,
+            validAbove: a.validAbove,
+            phaseNote: 'Phase is relative to the direct sound (propagation '
+                'delay removed), unwrapped.',
+          ),
+        );
+        files.add(XFile(gated.path));
+        files.add(XFile('${store.directory.path}/$irFile'));
       }
       final json = await store.writeExport(
         '${_slug(session.name)}.json',

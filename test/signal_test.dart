@@ -1,7 +1,11 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:audio_scanner/dsp/band_filter.dart';
+import 'package:audio_scanner/dsp/distortion.dart';
 import 'package:audio_scanner/dsp/impulse_response.dart';
+import 'package:audio_scanner/dsp/spectrogram.dart';
+import 'package:audio_scanner/export/frd.dart';
 import 'package:audio_scanner/dsp/octave_bands.dart';
 import 'package:audio_scanner/dsp/spectrum.dart';
 import 'package:audio_scanner/signal/log_sweep.dart';
@@ -82,6 +86,30 @@ void main() {
       expect(ir.samples[ir.directSoundIndex].abs(), closeTo(1.0, 0.02));
     });
 
+    test('a flat chain deconvolves to a flat response', () {
+      // Regression: the inverse filter's envelope once ran the wrong way and
+      // every response tilted −12 dB per octave. A sweep through nothing must
+      // come back flat within a dB across the band the sweep covers.
+      final x = sweep.generate();
+      final recorded = Float64List(x.length + 4800);
+      recorded.setRange(2400, 2400 + x.length, x);
+      final ir = deconvolveSweep(recording: recorded, sweep: sweep);
+      final gated = ir.gated(
+          window: const Duration(milliseconds: 40),
+          preRoll: const Duration(milliseconds: 20));
+      final (freqs, levels) = gated.frequencyResponse(fftSize: 65536);
+      final binHz = freqs[1];
+      final at1k = levels[(1000 / binHz).round()];
+      for (final hz in [100.0, 200, 400, 800, 1600, 3200, 6400]) {
+        expect(levels[(hz / binHz).round()], closeTo(at1k, 1.0),
+            reason: 'at $hz Hz');
+      }
+      // The absolute figure is not zero: normalisation is to the impulse's
+      // peak in time, and a band-limited impulse with a peak of one has a
+      // magnitude that depends on the sweep's bandwidth. Levels here are
+      // relative, and everything downstream anchors at 1 kHz.
+    });
+
     test('concentrates the energy into a couple of milliseconds', () {
       // A band-limited sweep cannot produce a mathematical delta — the result
       // is a bandpass impulse that rings, and for 50 Hz–8 kHz the first
@@ -126,6 +154,56 @@ void main() {
       expect(ir.samples[direct].abs(), closeTo(1.0, 0.1));
       // The echo is present, at half the level, exactly where it was planted.
       expect(ir.samples[echo].abs(), closeTo(0.5, 0.12));
+    });
+
+    test('harmonics land L·ln(n) before the direct sound and read their level',
+        () {
+      // y = x + 0.1·x²: with x = A·sin θ the second harmonic is
+      // 0.1·A²/2·cos 2θ, so HD2 = 0.05·A / 1 = 0.025 for A = 0.5 → −32 dB.
+      // No third harmonic at all.
+      final x = sweep.generate();
+      const delay = 2400;
+      final recorded = Float64List(x.length + delay);
+      for (var i = 0; i < x.length; i++) {
+        recorded[i + delay] = x[i] + 0.1 * x[i] * x[i];
+      }
+      final ir = deconvolveSweep(recording: recorded, sweep: sweep);
+      expect(ir.negativeTime, isNotNull);
+
+      // The second-harmonic impulse sits L·ln 2 ahead of the linear one.
+      final advance = (sweep.rate * math.ln2 * 48000).round();
+      var peakAt = 0;
+      var peak = 0.0;
+      for (var i = -advance - 200; i < -advance + 200; i++) {
+        final a = ir.sampleAt(ir.directSoundIndex + i).abs();
+        if (a > peak) {
+          peak = a;
+          peakAt = i;
+        }
+      }
+      expect(peakAt, closeTo(-advance, 3));
+
+      final hd = harmonicDistortion(ir, sweep);
+      final hd2 = hd.firstWhere((h) => h.order == 2);
+      final hd3 = hd.firstWhere((h) => h.order == 3);
+      expect(hd2.at(1000), closeTo(-32, 3));
+      expect(hd2.at(300), closeTo(-32, 3));
+      expect(hd3.at(1000), lessThan(-50));
+    });
+
+    test('a clean chain reads no distortion', () {
+      final x = sweep.generate();
+      final recorded = Float64List(x.length + 2400);
+      recorded.setRange(2400, 2400 + x.length, x);
+      final ir = deconvolveSweep(recording: recorded, sweep: sweep);
+      for (final h in harmonicDistortion(ir, sweep)) {
+        expect(h.at(1000), lessThan(-60));
+      }
+    });
+
+    test('a response that is not from a sweep has nothing to say', () {
+      final ir = ImpulseResponse(samples: Float64List(100)..[10] = 1, sampleRate: 48000);
+      expect(harmonicDistortion(ir, sweep), isEmpty);
     });
 
     test('a delayed, attenuated recording puts the impulse at that delay', () {
@@ -199,6 +277,47 @@ void main() {
           100 + 240);
     });
 
+    test('phase is flat once the propagation delay is removed', () {
+      final s = Float64List(4096);
+      s[700] = 1.0;
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final (freqs, re, im) = ir.complexResponse(fftSize: 4096);
+      final phase = FrdExport.phaseDegrees(re, im);
+      for (var k = 1; k < freqs.length; k++) {
+        expect(phase[k].abs(), lessThan(1.0));
+      }
+    });
+
+    test('phase without delay removal slopes by exactly the delay', () {
+      final s = Float64List(4096);
+      s[700] = 1.0;
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final (freqs, re, im) =
+          ir.complexResponse(fftSize: 4096, removeDelay: false);
+      final phase = FrdExport.phaseDegrees(re, im);
+      // A delay of N samples is a phase of −360·k·N/n degrees at bin k.
+      for (final k in [1, 5, 40]) {
+        expect(phase[k], closeTo(-360.0 * k * 700 / 4096, 0.5));
+      }
+      expect(freqs[1], closeTo(48000 / 4096, 1e-9));
+    });
+
+    test('a reflection shows up as ripple in magnitude and phase', () {
+      final s = Float64List(4096);
+      s[100] = 1.0;
+      s[100 + 48] = 0.5; // 1 ms later: comb with 1 kHz spacing
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final (freqs, levels) = ir.frequencyResponse(fftSize: 4096);
+      int binOf(double hz) => (hz / (48000 / 4096)).round();
+      // Constructive at 1 kHz (path difference one period), destructive at
+      // 500 Hz (half a period).
+      expect(levels[binOf(1000)] - levels[binOf(500)], closeTo(9.5, 0.6));
+      final (_, re, im) = ir.complexResponse(fftSize: 4096);
+      final phase = FrdExport.phaseDegrees(re, im);
+      expect(phase.any((p) => p.abs() > 5), isTrue);
+      expect(freqs.length, 2049);
+    });
+
     test('gating states the frequency below which it says nothing', () {
       final s = Float64List(48000);
       s[500] = 1.0;
@@ -206,6 +325,131 @@ void main() {
       final gated = ir.gated(window: const Duration(milliseconds: 5));
       // A 5 ms window cannot resolve below about 200 Hz.
       expect(gated.gatedResponseValidAbove, closeTo(200, 5));
+    });
+  });
+
+  group('decay per band', () {
+    /// Noise decaying with one RT60 below [splitHz] and another above it.
+    ImpulseResponse twoBandDecay({
+      required double lowRt60,
+      required double highRt60,
+      double splitHz = 400,
+      double rate = 48000,
+      int length = 48000,
+    }) {
+      final rnd = math.Random(5);
+      final noise = Float64List(length);
+      for (var i = 0; i < length; i++) {
+        noise[i] = rnd.nextDouble() * 2 - 1;
+      }
+      final base = ImpulseResponse(samples: noise, sampleRate: rate);
+      // Split the noise into the two halves of the spectrum, decay each.
+      final low = bandLimit(base, centerHz: splitHz / 4, octaves: 4);
+      final high = bandLimit(base, centerHz: splitHz * 4, octaves: 4);
+      final out = Float64List(length);
+      final tauLow = lowRt60 / (3 * math.ln10);
+      final tauHigh = highRt60 / (3 * math.ln10);
+      for (var i = 0; i < length; i++) {
+        final t = i / rate;
+        out[i] = low.samples[i] * math.exp(-t / tauLow) +
+            high.samples[i] * math.exp(-t / tauHigh);
+      }
+      out[0] = 1.0;
+      return ImpulseResponse(samples: out, sampleRate: rate);
+    }
+
+    test('band limiting keeps the band and kills two octaves away', () {
+      final rnd = math.Random(9);
+      final noise = Float64List(16384);
+      for (var i = 0; i < noise.length; i++) {
+        noise[i] = rnd.nextDouble() * 2 - 1;
+      }
+      final band = bandLimit(
+          ImpulseResponse(samples: noise, sampleRate: 48000),
+          centerHz: 1000);
+      final (freqs, levels) = band.frequencyResponse(fftSize: 16384);
+      int binOf(double hz) => (hz / (48000 / 16384)).round();
+      double around(double hz) {
+        var sum = 0.0;
+        var n = 0;
+        for (var k = binOf(hz * 0.95); k <= binOf(hz * 1.05); k++) {
+          sum += levels[k];
+          n++;
+        }
+        return sum / n;
+      }
+
+      expect(around(1000) - around(250), greaterThan(40));
+      expect(around(1000) - around(4000), greaterThan(40));
+      expect(freqs.length, 8193);
+    });
+
+    test('recovers a different RT60 in each band', () {
+      final ir = twoBandDecay(lowRt60: 0.8, highRt60: 0.3);
+      final bands = decayPerBand(ir, centers: [63, 125, 1000, 2000]);
+      final low = bands.firstWhere((b) => b.centerHz == 125);
+      final high = bands.firstWhere((b) => b.centerHz == 2000);
+      expect(low.t20, isNotNull);
+      expect(high.t20, isNotNull);
+      expect(low.t20!.inMilliseconds / 1000, closeTo(0.8, 0.12));
+      expect(high.t20!.inMilliseconds / 1000, closeTo(0.3, 0.08));
+    });
+
+    test('EDT equals T20 on an ideal exponential decay', () {
+      final rnd = math.Random(11);
+      final s = Float64List(48000);
+      final tau = 0.6 / (3 * math.ln10);
+      for (var i = 0; i < s.length; i++) {
+        s[i] = (rnd.nextDouble() * 2 - 1) * math.exp(-i / 48000 / tau);
+      }
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      final edt = ir.rt60(decayDb: 10, startDb: 0)!.inMilliseconds;
+      final t20 = ir.rt60(decayDb: 20)!.inMilliseconds;
+      expect((edt - t20).abs(), lessThan(100));
+    });
+
+    test('clarity is the early-to-late energy ratio', () {
+      final s = Float64List(48000);
+      s[100] = 1.0;
+      s[100 + 2880] = math.sqrt(0.5); // 60 ms later, half the energy
+      final ir = ImpulseResponse(samples: s, sampleRate: 48000);
+      expect(ir.clarityDb(const Duration(milliseconds: 50)), closeTo(3.01, 0.05));
+      // With the reflection inside the early window there is no late energy.
+      expect(ir.clarityDb(const Duration(milliseconds: 80)), isNull);
+    });
+
+    test('mid-band RT60 averages 125–500 Hz and ignores the rest', () {
+      const bands = [
+        BandDecay(centerHz: 63, t20: Duration(seconds: 5)),
+        BandDecay(centerHz: 125, t20: Duration(milliseconds: 600)),
+        BandDecay(centerHz: 250),
+        BandDecay(centerHz: 500, t20: Duration(milliseconds: 400)),
+        BandDecay(centerHz: 4000, t20: Duration(milliseconds: 100)),
+      ];
+      expect(midBandRt60(bands), closeTo(0.5, 1e-9));
+      expect(midBandRt60(const [BandDecay(centerHz: 250)]), isNull);
+    });
+  });
+
+  group('spectrogram', () {
+    test('a mode that rings on shows as a streak the rest of the band lacks',
+        () {
+      // 100 Hz decaying slowly, 2 kHz decaying fast, both from t = 0.
+      final s = Float64List(48000);
+      for (var i = 0; i < s.length; i++) {
+        final t = i / 48000;
+        s[i] = math.sin(2 * math.pi * 100 * t) * math.exp(-t / 0.3) +
+            math.sin(2 * math.pi * 2000 * t) * math.exp(-t / 0.02);
+      }
+      s[0] = 2.0;
+      final sg = Spectrogram.of(ImpulseResponse(samples: s, sampleRate: 48000));
+      expect(sg.timesMs.first, lessThan(0));
+      expect(sg.timesMs.last, greaterThan(400));
+      // At 300 ms the 100 Hz mode is still well above the 2 kHz tone.
+      expect(sg.levelAt(300, 100) - sg.levelAt(300, 2000), greaterThan(30));
+      // …and at 5 ms both are present.
+      expect(sg.levelAt(5, 2000), greaterThan(-30));
+      expect(sg.levelAt(5, 100), greaterThan(-30));
     });
   });
 

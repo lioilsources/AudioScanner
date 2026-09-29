@@ -20,10 +20,20 @@ class SpectrumBars extends StatelessWidget {
     this.minDb = -90,
     this.maxDb = -10,
     this.highlight,
+    this.peak,
+    this.maxTrace,
+    this.minTrace,
   });
 
   final List<double> bandsDb;
   final List<double>? reference;
+
+  /// Falling peak marks, one short bar per band.
+  final List<double>? peak;
+
+  /// Envelope since reset, drawn as thin lines above and below the bars.
+  final List<double>? maxTrace;
+  final List<double>? minTrace;
   final double minDb;
   final double maxDb;
 
@@ -39,6 +49,9 @@ class SpectrumBars extends StatelessWidget {
         minDb: minDb,
         maxDb: maxDb,
         highlight: highlight,
+        peak: peak,
+        maxTrace: maxTrace,
+        minTrace: minTrace,
         scheme: Theme.of(context).colorScheme,
       ),
       child: const SizedBox.expand(),
@@ -54,6 +67,9 @@ class _BarsPainter extends CustomPainter {
     required this.maxDb,
     required this.highlight,
     required this.scheme,
+    this.peak,
+    this.maxTrace,
+    this.minTrace,
   });
 
   final List<double> bandsDb;
@@ -62,6 +78,9 @@ class _BarsPainter extends CustomPainter {
   final double maxDb;
   final int? highlight;
   final ColorScheme scheme;
+  final List<double>? peak;
+  final List<double>? maxTrace;
+  final List<double>? minTrace;
 
   /// Decade-ish landmarks only — labelling all 31 bands turns the axis into a
   /// grey smear on a phone.
@@ -109,6 +128,45 @@ class _BarsPainter extends CustomPainter {
         final ry = yFor(ref[i]);
         canvas.drawRect(Rect.fromLTRB(x, ry, x + barWidth, plotHeight), refPaint);
       }
+
+      final pk = peak;
+      if (pk != null && i < pk.length && pk[i] > minDb) {
+        final py = yFor(pk[i]);
+        canvas.drawRect(
+          Rect.fromLTRB(x, py - 1.5, x + barWidth, py + 1.5),
+          Paint()..color = scheme.tertiary,
+        );
+      }
+    }
+
+    // Envelope traces: a thin line through the band maxima and another
+    // through the minima. Lines, not bars: they describe a range, not a
+    // reading.
+    for (final (trace, color) in [
+      (maxTrace, scheme.error.withValues(alpha: 0.8)),
+      (minTrace, scheme.secondary.withValues(alpha: 0.8)),
+    ]) {
+      if (trace == null) continue;
+      final path = Path();
+      var started = false;
+      for (var i = 0; i < n && i < trace.length; i++) {
+        if (trace[i] <= minDb) continue;
+        final cx = i * slot + slot / 2;
+        final y = yFor(trace[i]);
+        if (!started) {
+          path.moveTo(cx, y);
+          started = true;
+        } else {
+          path.lineTo(cx, y);
+        }
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
     }
 
     for (var i = 0; i < n && i < OctaveBands.all.length; i++) {
@@ -128,6 +186,9 @@ class _BarsPainter extends CustomPainter {
   @override
   bool shouldRepaint(_BarsPainter old) =>
       old.bandsDb != bandsDb ||
+      old.peak != peak ||
+      old.maxTrace != maxTrace ||
+      old.minTrace != minTrace ||
       old.reference != reference ||
       old.highlight != highlight ||
       old.minDb != minDb ||

@@ -155,6 +155,8 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
               if (ir != null) ...[
                 _ResponseCard(
                   analysis: _analysisFor(ir),
+                  correct: (levels) => s.correctionContext
+                      .correctedCurve(_analysisFor(ir).frequencies, levels),
                   gateMs: _gateMs,
                   smoothing: _smoothing,
                   onGateChanged: (ms) => setState(() => _gateMs = ms),
@@ -180,7 +182,8 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
 
     final text = FrdExport.fromImpulseResponse(
       frequencies: a.frequencies,
-      magnitudesDb: a.gatedDb,
+      magnitudesDb:
+          widget.state.correctionContext.correctedCurve(a.frequencies, a.gatedDb),
       phasesDeg: FrdExport.phaseDegrees(a.gatedRe, a.gatedIm),
       session: widget.state.session,
       validAbove: a.validAbove,
@@ -198,6 +201,7 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
 class _ResponseCard extends StatelessWidget {
   const _ResponseCard({
     required this.analysis,
+    required this.correct,
     required this.gateMs,
     required this.smoothing,
     required this.onGateChanged,
@@ -205,6 +209,9 @@ class _ResponseCard extends StatelessWidget {
   });
 
   final ResponseAnalysis analysis;
+
+  /// Applies the session's microphone correction to a curve for display.
+  final List<double> Function(List<double>) correct;
   final double gateMs;
   final int smoothing;
   final ValueChanged<double> onGateChanged;
@@ -236,14 +243,14 @@ class _ResponseCard extends StatelessWidget {
                 curves: [
                   ResponseCurve(
                     frequencies: analysis.frequencies,
-                    levelsDb: analysis.roomSmoothed(smoothing),
+                    levelsDb: correct(analysis.roomSmoothed(smoothing)),
                     label: 's místností (1 s)',
                     color: t.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                     strokeWidth: 1.5,
                   ),
                   ResponseCurve(
                     frequencies: analysis.frequencies,
-                    levelsDb: analysis.gatedSmoothed(smoothing),
+                    levelsDb: correct(analysis.gatedSmoothed(smoothing)),
                     label: 'přímý zvuk (okno ${gateMs.toStringAsFixed(gateMs < 10 ? 1 : 0)} ms)',
                     color: t.colorScheme.primary,
                   ),

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 
 import '../dsp/impulse_response.dart';
+import '../model/mic_calibration.dart';
 import '../model/session.dart';
 
 /// Sessions on disk, one JSON file each.
@@ -58,6 +59,28 @@ class SessionStore {
       if (e is File && e.path.endsWith('.ir') && e.uri.pathSegments.last.startsWith('${id}_')) {
         await e.delete();
       }
+    }
+  }
+
+  File get _calibrationFile => File('${directory.path}/calibration.json');
+
+  /// The microphone calibration to start new sessions with.
+  Future<void> saveCalibration(MicCalibration? cal) async {
+    if (cal == null) {
+      if (_calibrationFile.existsSync()) await _calibrationFile.delete();
+      return;
+    }
+    if (!directory.existsSync()) directory.createSync(recursive: true);
+    await _calibrationFile.writeAsString(jsonEncode(cal.toJson()), flush: true);
+  }
+
+  Future<MicCalibration?> loadCalibration() async {
+    if (!_calibrationFile.existsSync()) return null;
+    try {
+      return MicCalibration.fromJson(
+          jsonDecode(await _calibrationFile.readAsString()) as Map<String, dynamic>);
+    } on FormatException {
+      return null;
     }
   }
 
@@ -141,6 +164,7 @@ class SessionStore {
     final out = <Session>[];
     for (final e in directory.listSync()) {
       if (e is! File || !e.path.endsWith('.json')) continue;
+      if (e.path == _calibrationFile.path) continue;
       try {
         out.add(Session.fromJson(
             jsonDecode(e.readAsStringSync()) as Map<String, dynamic>));

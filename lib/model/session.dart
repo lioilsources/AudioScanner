@@ -1,5 +1,7 @@
 import '../export/avr_config.dart';
+import '../dsp/octave_bands.dart';
 import 'measurement.dart';
+import 'mic_calibration.dart';
 
 /// How the room was excited while a session was recorded.
 enum ExcitationSignal {
@@ -36,7 +38,12 @@ class Session {
     List<Measurement>? points,
     this.note,
     this.target = const TargetCurve(),
+    this.calibration,
   }) : points = points ?? [];
+
+  /// The microphone's response file, if one was loaded. Applied on the way
+  /// out (display, export), never to [points].
+  MicCalibration? calibration;
 
   /// The response the EQ aims for. Mutable: it is the one thing the user
   /// tunes by ear after the measurement is done.
@@ -51,7 +58,72 @@ class Session {
   /// Manual offset added to displayed levels so the numbers can be lined up
   /// with a real SPL meter. Stored, never applied to the raw data: it is a
   /// display convenience and must not quietly become part of a measurement.
-  final double calibrationOffsetDb;
+  double calibrationOffsetDb;
+
+  /// Whether displayed levels can be called an SPL estimate at all.
+  bool get hasSplOffset => calibrationOffsetDb != 0;
+
+  /// [bands] with the microphone taken out and the SPL offset put in.
+  ///
+  /// The one place corrections are applied to band data. Everything that
+  /// shows or exports a point goes through here, so a calibration loaded
+  /// later corrects every existing point the same way.
+  List<double> correctedBands(List<double> bands) {
+    final cal = calibration;
+    return [
+      for (var i = 0; i < bands.length; i++)
+        bands[i] +
+            calibrationOffsetDb +
+            (cal == null ? 0 : cal.correctionAt(OctaveBands.all[i].nominal)),
+    ];
+  }
+
+  /// Same for a full-resolution curve.
+  List<double> correctedCurve(List<double> frequencies, List<double> levelsDb) {
+    final cal = calibration;
+    if (cal == null && calibrationOffsetDb == 0) return levelsDb;
+    return [
+      for (var i = 0; i < frequencies.length; i++)
+        levelsDb[i] +
+            calibrationOffsetDb +
+            (cal == null ? 0 : cal.correctionAt(frequencies[i])),
+    ];
+  }
+
+  /// A copy of [m] with corrected bands, for code that works on points.
+  Measurement corrected(Measurement m) => Measurement(
+        id: m.id,
+        position: m.position,
+        timestamp: m.timestamp,
+        bandsDb: correctedBands(m.bandsDb),
+        rmsDbfs: m.rmsDbfs + calibrationOffsetDb,
+        arAccuracy: m.arAccuracy,
+        note: m.note,
+        channel: m.channel,
+        impulse: m.impulse,
+        afterEq: m.afterEq,
+      );
+
+  List<Measurement> get correctedPoints => [for (final p in points) corrected(p)];
+  List<Measurement> get correctedMapPoints =>
+      [for (final p in mapPoints) corrected(p)];
+
+  /// One line for an export header saying what was applied.
+  String? get correctionNote {
+    final parts = <String>[];
+    final cal = calibration;
+    if (cal != null) {
+      parts.add('microphone calibration "${cal.name}" (${cal.points.length} '
+          'points, ${cal.minDb.toStringAsFixed(1)} … '
+          '${cal.maxDb.toStringAsFixed(1)} dB) subtracted');
+    }
+    if (calibrationOffsetDb != 0) {
+      parts.add('SPL offset ${calibrationOffsetDb >= 0 ? '+' : ''}'
+          '${calibrationOffsetDb.toStringAsFixed(1)} dB added — levels are an '
+          'SPL estimate');
+    }
+    return parts.isEmpty ? null : parts.join('; ');
+  }
 
   final List<Measurement> points;
   final String? note;
@@ -93,6 +165,7 @@ class Session {
         'points': [for (final p in points) p.toJson()],
         if (note != null) 'note': note,
         'target': target.toJson(),
+        if (calibration != null) 'calibration': calibration!.toJson(),
         'format': 'audioscanner.session/1',
       };
 
@@ -115,5 +188,8 @@ class Session {
         target: j['target'] == null
             ? const TargetCurve()
             : TargetCurve.fromJson(j['target'] as Map<String, dynamic>),
+        calibration: j['calibration'] == null
+            ? null
+            : MicCalibration.fromJson(j['calibration'] as Map<String, dynamic>),
       );
 }

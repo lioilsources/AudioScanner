@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
 import '../dsp/octave_bands.dart';
+import '../model/mic_calibration.dart';
 import 'widgets/spectrum_bars.dart';
 
 /// Phase 1: the live analyser.
@@ -19,6 +23,71 @@ class RtaScreen extends StatefulWidget {
 }
 
 class _RtaScreenState extends State<RtaScreen> {
+  Future<void> _importCalibration() async {
+    final s = widget.state;
+    final picked = await FilePicker.pickFiles(type: FileType.any);
+    if (picked.isEmpty || !mounted) return;
+    final path = picked.first.path;
+    if (path == null) return;
+    try {
+      final text = await File(path).readAsString();
+      final name = path.split(Platform.pathSeparator).last;
+      final cal = MicCalibration.parse(text, name: name);
+      await s.setCalibration(cal);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Kalibrace $name: ${cal.points.length} bodů, '
+            '${cal.minDb.toStringAsFixed(1)} … ${cal.maxDb.toStringAsFixed(1)} dB'),
+      ));
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Soubor nejde přečíst: ${e.message}')));
+    }
+  }
+
+  Future<void> _editOffset() async {
+    final s = widget.state;
+    final controller =
+        TextEditingController(text: s.splOffsetDb.toStringAsFixed(1));
+    final value = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Offset dB SPL'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Pusť tón 1 kHz, odečti hladinu na SPL metru a zadej rozdíl '
+              'proti tomu, co ukazuje analyzátor. S nenulovým offsetem se '
+              'hladiny značí jako odhad SPL; bez něj zůstávají dBFS.',
+            ),
+            TextField(
+              controller: controller,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true, signed: true),
+              decoration: const InputDecoration(suffixText: 'dB'),
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 0.0),
+              child: const Text('Vynulovat')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Zrušit')),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+                ctx, double.tryParse(controller.text.replaceAll(',', '.'))),
+            child: const Text('Uložit'),
+          ),
+        ],
+      ),
+    );
+    if (value != null) await s.setSplOffset(value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -27,6 +96,8 @@ class _RtaScreenState extends State<RtaScreen> {
         final s = widget.state;
         final spectrum = s.spectrum;
         final status = s.captureStatus;
+        final ctx = s.correctionContext;
+        final cal = s.calibration;
 
         return Scaffold(
           appBar: AppBar(
@@ -37,6 +108,23 @@ class _RtaScreenState extends State<RtaScreen> {
                 tooltip: s.listening ? 'Zastavit' : 'Spustit mikrofon',
                 onPressed: () =>
                     s.listening ? s.stopListening() : s.startListening(),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (v) => switch (v) {
+                  'cal' => _importCalibration(),
+                  'nocal' => s.setCalibration(null),
+                  'offset' => _editOffset(),
+                  _ => null,
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                      value: 'cal', child: Text('Kalibrace mikrofonu…')),
+                  if (cal != null)
+                    const PopupMenuItem(
+                        value: 'nocal', child: Text('Odebrat kalibraci')),
+                  const PopupMenuItem(
+                      value: 'offset', child: Text('Offset dB SPL…')),
+                ],
               ),
             ],
           ),
@@ -54,18 +142,30 @@ class _RtaScreenState extends State<RtaScreen> {
                     text: '${status.route} · '
                         '${status.sampleRate.toStringAsFixed(0)} Hz · bez úprav signálu',
                   ),
+                if (cal != null)
+                  _Chip(
+                    icon: Icons.tune,
+                    text: 'Kalibrace ${cal.name}: ${cal.points.length} bodů, '
+                        'korekce ${(-cal.maxDb).toStringAsFixed(1)} … '
+                        '${(-cal.minDb).toStringAsFixed(1)} dB',
+                  ),
                 const SizedBox(height: 12),
                 _LevelRow(
-                  rmsDbfs: spectrum?.rmsDbfs,
+                  rmsDbfs: spectrum == null
+                      ? null
+                      : spectrum.rmsDbfs + ctx.calibrationOffsetDb,
                   listening: s.listening,
+                  unit: ctx.hasSplOffset ? 'dB SPL (odhad)' : 'dBFS',
                 ),
                 const SizedBox(height: 12),
                 Expanded(
                   child: spectrum == null
                       ? const _Placeholder()
                       : SpectrumBars(
-                          bandsDb: spectrum.bandsDb,
+                          bandsDb: ctx.correctedBands(spectrum.bandsDb),
                           reference: s.referenceBands,
+                          minDb: -90 + ctx.calibrationOffsetDb,
+                          maxDb: -10 + ctx.calibrationOffsetDb,
                         ),
                 ),
                 const SizedBox(height: 8),
@@ -86,10 +186,15 @@ class _RtaScreenState extends State<RtaScreen> {
 }
 
 class _LevelRow extends StatelessWidget {
-  const _LevelRow({required this.rmsDbfs, required this.listening});
+  const _LevelRow({
+    required this.rmsDbfs,
+    required this.listening,
+    this.unit = 'dBFS',
+  });
 
   final double? rmsDbfs;
   final bool listening;
+  final String unit;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +214,7 @@ class _LevelRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text('dBFS', style: t.textTheme.titleMedium),
+        Text(unit, style: t.textTheme.titleMedium),
         const Spacer(),
         if (!listening)
           Text('mikrofon stojí', style: t.textTheme.bodySmall)

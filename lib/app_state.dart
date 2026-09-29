@@ -10,6 +10,7 @@ import 'dsp/impulse_response.dart';
 import 'dsp/octave_bands.dart';
 import 'dsp/spectrum.dart';
 import 'model/measurement.dart';
+import 'model/mic_calibration.dart';
 import 'model/session.dart';
 import 'signal/log_sweep.dart';
 import 'store/session_store.dart';
@@ -60,12 +61,58 @@ class AppState extends ChangeNotifier {
   Session? _session;
   Session? get session => _session;
 
-  /// Reference levels the map is quoted against — the first point taken.
-  List<double>? get referenceBands => _session?.reference?.bandsDb;
+  /// Reference levels the map is quoted against — the first point taken,
+  /// corrected the same way the live bars are.
+  List<double>? get referenceBands {
+    final ref = _session?.reference;
+    return ref == null ? null : _session!.correctedBands(ref.bandsDb);
+  }
 
   Future<void> attachStore(SessionStore store) async {
     _store = store;
+    _calibration = await store.loadCalibration();
+    notifyListeners();
   }
+
+  // --- calibration --------------------------------------------------------
+
+  MicCalibration? _calibration;
+  double _splOffsetDb = 0;
+
+  /// The calibration in force: the session's, else the app-level one that
+  /// new sessions inherit.
+  MicCalibration? get calibration => _session?.calibration ?? _calibration;
+  double get splOffsetDb => _session?.calibrationOffsetDb ?? _splOffsetDb;
+
+  Future<void> setCalibration(MicCalibration? cal) async {
+    _calibration = cal;
+    _session?.calibration = cal;
+    await _store?.saveCalibration(cal);
+    final session = _session;
+    if (session != null) await _store?.save(session);
+    notifyListeners();
+  }
+
+  Future<void> setSplOffset(double db) async {
+    _splOffsetDb = db;
+    _session?.calibrationOffsetDb = db;
+    final session = _session;
+    if (session != null) await _store?.save(session);
+    notifyListeners();
+  }
+
+  /// A throwaway session carrying the current corrections, for screens that
+  /// need to correct a curve before any session exists.
+  Session get correctionContext =>
+      _session ??
+      Session(
+        id: '-',
+        name: '-',
+        createdAt: DateTime.now(),
+        signal: ExcitationSignal.externalSweep,
+        calibrationOffsetDb: _splOffsetDb,
+        calibration: _calibration,
+      );
 
   /// Averaging in progress for a "measure here" tap.
   BandAverager? _averager;
@@ -221,6 +268,8 @@ class AppState extends ChangeNotifier {
       createdAt: DateTime.now(),
       signal: signal,
       sampleRate: _captureStatus?.sampleRate ?? 48000,
+      calibrationOffsetDb: _splOffsetDb,
+      calibration: _calibration,
     );
     _session = s;
     await _store?.save(s);

@@ -21,13 +21,19 @@ class FrdExport {
   }) {
     final b = StringBuffer();
     _header(b, session: session, point: point);
-    b.writeln('* Uncalibrated phone microphone — levels are RELATIVE (dBFS).');
+    final note = session?.correctionNote;
+    if (note == null) {
+      b.writeln('* Uncalibrated phone microphone — levels are RELATIVE (dBFS).');
+    } else {
+      b.writeln('* Phone microphone; $note.');
+    }
     b.writeln('* 1/3-octave band magnitudes; phase column is zero by design.');
     b.writeln('*');
     b.writeln('* Freq(Hz)  SPL(dB)  Phase(deg)');
+    final bands = session?.correctedBands(point.bandsDb) ?? point.bandsDb;
     for (var i = 0; i < OctaveBands.all.length; i++) {
       final band = OctaveBands.all[i];
-      final level = point.bandsDb[i] + offsetDb;
+      final level = bands[i] + offsetDb;
       b.writeln('${_num(band.nominal, 2)}  ${_num(level, 3)}  0.000');
     }
     return b.toString();
@@ -56,6 +62,8 @@ class FrdExport {
           'room, sets the curve.');
     }
     if (phaseNote != null) b.writeln('* $phaseNote');
+    final note = session?.correctionNote;
+    if (note != null) b.writeln('* Phone microphone; $note.');
     b.writeln('*');
     b.writeln('* Freq(Hz)  SPL(dB)  Phase(deg)');
     for (var i = 0; i < frequencies.length; i++) {

@@ -161,9 +161,12 @@ class _CompareScreenState extends State<CompareScreen> {
     final colorB = t.colorScheme.tertiary;
     final colorDiff = t.colorScheme.onSurfaceVariant.withValues(alpha: 0.7);
 
+    final ctx = widget.state.correctionContext;
     if (anA != null && anB != null) {
-      final a = _gatedView ? anA.gatedSmoothed(_smoothing) : anA.roomSmoothed(_smoothing);
-      final b = _gatedView ? anB.gatedSmoothed(_smoothing) : anB.roomSmoothed(_smoothing);
+      final a = ctx.correctedCurve(anA.frequencies,
+          _gatedView ? anA.gatedSmoothed(_smoothing) : anA.roomSmoothed(_smoothing));
+      final b = ctx.correctedCurve(anB.frequencies,
+          _gatedView ? anB.gatedSmoothed(_smoothing) : anB.roomSmoothed(_smoothing));
       // The two analyses share an FFT length only when the recordings are
       // the same length; the difference is drawn on A's axis and B is
       // looked up by frequency.
@@ -190,8 +193,8 @@ class _CompareScreenState extends State<CompareScreen> {
 
     // Band data only: 31 points each, drawn as the steps they are.
     final freqs = [for (final b in OctaveBands.all) b.nominal];
-    final a = _a!.bandsDb;
-    final b = _b!.bandsDb;
+    final a = ctx.correctedBands(_a!.bandsDb);
+    final b = ctx.correctedBands(_b!.bandsDb);
     return ResponseChart(
       curves: [
         ResponseCurve(frequencies: freqs, levelsDb: a, label: 'A (pásma)', color: colorA),

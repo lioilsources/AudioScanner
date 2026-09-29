@@ -337,7 +337,7 @@ class _DesignScreenState extends State<DesignScreen> {
         room: room,
         seat: seat,
         speakers: _referenceLayout(room, seat),
-        measurements: session?.points ?? const [],
+        measurements: session?.correctedPoints ?? const [],
         forward: math.pi,
         target: session?.target ?? _target,
       );

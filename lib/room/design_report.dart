@@ -207,7 +207,19 @@ DesignReport buildDesignReport({
 
   // --- per-channel config ---------------------------------------------------
 
-  final byChannel = {for (final m in measurements) m.id: m};
+  // Keyed on the channel the point was taken for. Ids are 'p1', 'p2' and so
+  // on and never a channel name; keying on them is how the EQ silently went
+  // missing from every real session.
+  final byChannel = <String, Measurement>{};
+  for (final m in measurements) {
+    final ch = m.channel;
+    if (ch == null || m.afterEq) continue;
+    final existing = byChannel[ch];
+    if (existing == null || m.timestamp.isAfter(existing.timestamp)) {
+      byChannel[ch] = m;
+    }
+  }
+  final meanLevel = _meanLevel(byChannel.values);
   final channels = <ChannelConfig>[];
   final crossovers = <int>[];
 
@@ -244,7 +256,7 @@ DesignReport buildDesignReport({
       distanceM: (check.distance / integraDistanceStepM).round() *
           integraDistanceStepM,
       crossoverHz: xo,
-      levelDb: _levelFor(byChannel, s.channel),
+      levelDb: _levelFor(byChannel, s.channel, meanLevel),
       eq: _eqFor(byChannel, s.channel, target, room),
       warnings: warnings,
     ));
@@ -295,12 +307,31 @@ DesignReport buildDesignReport({
   );
 }
 
-double _levelFor(Map<String, Measurement> byChannel, Channel channel) {
+/// Energy mean of the measured channels' broadband levels — the common
+/// reference every trim is quoted against. Absolute level is meaningless from
+/// an uncalibrated microphone; what a level calibration does is make every
+/// channel read the same at the seat, and that only needs the differences.
+double? _meanLevel(Iterable<Measurement> measured) {
+  var sum = 0.0;
+  var n = 0;
+  for (final m in measured) {
+    sum += math.pow(10, m.rmsDbfs / 10).toDouble();
+    n++;
+  }
+  if (n == 0) return null;
+  return 10 * math.log(sum / n) / math.ln10;
+}
+
+double _levelFor(
+  Map<String, Measurement> byChannel,
+  Channel channel,
+  double? meanLevel,
+) {
   final m = byChannel[channel.name];
-  if (m == null) return 0;
-  // Trim toward a common reference: the broadband level the channel came in at,
-  // rounded to what the receiver accepts.
-  final delta = -m.rmsDbfs - 20;
+  if (m == null || meanLevel == null) return 0;
+  // Trim toward the mean of the measured channels, rounded to what the
+  // receiver accepts. A channel that came in hot gets cut, a quiet one lifted.
+  final delta = meanLevel - m.rmsDbfs;
   return (delta.clamp(-12.0, 12.0) / integraLevelStepDb).round() *
       integraLevelStepDb;
 }

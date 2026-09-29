@@ -268,6 +268,85 @@ class AppState extends ChangeNotifier {
     return point;
   }
 
+  /// Stores the last deconvolved sweep as a measurement for [channel].
+  ///
+  /// The point's band levels come from the *whole* response, one second of
+  /// it: below the Schroeder frequency the EQ has to see the room, not just
+  /// the speaker, and that is where the EQ works. The gated bands live in the
+  /// summary for the comparisons that want the speaker alone.
+  ///
+  /// Position is the AR pose when tracking is usable and the origin when it
+  /// is not — channel measurements are taken from the seat and the design
+  /// report does not need to know where the seat is in AR space, only that
+  /// every channel was measured from the same place.
+  Future<Measurement?> addSweepMeasurement({
+    required String channel,
+    bool afterEq = false,
+    Duration gate = const Duration(milliseconds: 5),
+  }) async {
+    final ir = _impulseResponse;
+    if (ir == null) return null;
+    final session = _session ??
+        await beginSession(
+            name: 'Kanály', signal: ExcitationSignal.externalSweep);
+
+    final room = ir.gated(window: const Duration(seconds: 1));
+    final (freqs, levels) = room.frequencyResponse();
+    final bands = bandMeansFromTransferDb(levels, binHz: freqs[1]);
+
+    final id = 'p${session.points.length + 1}';
+    String? file;
+    final store = _store;
+    if (store != null) {
+      file = await store.writeImpulse(session.id, id, ir);
+    }
+
+    final p = _pose;
+    final point = Measurement(
+      id: id,
+      position: (p != null && p.quality.usableForMeasurement)
+          ? p.position
+          : Vec3.zero,
+      timestamp: DateTime.now(),
+      bandsDb: bands,
+      rmsDbfs: _broadbandDb(bands),
+      arAccuracy: p?.quality.name,
+      channel: channel,
+      afterEq: afterEq,
+      impulse: ImpulseSummary.from(ir, gate: gate, file: file),
+    );
+    session.points.add(point);
+    await store?.save(session);
+    notifyListeners();
+    return point;
+  }
+
+  /// Energy mean of the bands between 100 Hz and 4 kHz: the level a receiver's
+  /// pink-noise calibration would settle on, minus the extremes where a phone
+  /// microphone and a room disagree the most.
+  static double _broadbandDb(List<double> bands) {
+    var sum = 0.0;
+    var n = 0;
+    for (var i = 0; i < OctaveBands.all.length; i++) {
+      final f = OctaveBands.all[i].nominal;
+      if (f < 100 || f > 4000) continue;
+      sum += math.pow(10, bands[i] / 10).toDouble();
+      n++;
+    }
+    return n == 0 || sum <= 0 ? -160 : 10 * math.log(sum / n) / math.ln10;
+  }
+
+  /// Loads the full impulse response behind a point, if it has one on disk.
+  Future<ImpulseResponse?> impulseFor(Measurement m) async {
+    final file = m.impulse?.file;
+    final store = _store;
+    if (file == null || store == null) return null;
+    return _impulseCache[file] ??= (await store.readImpulse(file)) ??
+        ImpulseResponse(samples: Float64List(0), sampleRate: 48000);
+  }
+
+  final _impulseCache = <String, ImpulseResponse>{};
+
   /// Distance from the last stored point — drives the "every 0.5 m" continuous
   /// mode from the plan.
   double? get distanceFromLastPoint {

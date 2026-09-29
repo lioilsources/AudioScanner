@@ -34,7 +34,7 @@ class _MapScreenState extends State<MapScreen> {
       listenable: widget.state,
       builder: (context, _) {
         final session = widget.state.session;
-        final points = session?.points ?? const <Measurement>[];
+        final points = session?.mapPoints ?? const <Measurement>[];
         final band = OctaveBands.all[_bandIndex];
 
         return Scaffold(

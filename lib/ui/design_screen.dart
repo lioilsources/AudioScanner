@@ -9,6 +9,7 @@ import '../room/room_capture.dart';
 import '../room/room_geometry.dart';
 import '../room/speaker_layout.dart';
 import '../store/session_store.dart';
+import 'channel_measure_card.dart';
 
 /// Phase 5: put the geometry and the measurements together and say what to do.
 class DesignScreen extends StatefulWidget {
@@ -80,6 +81,18 @@ class _DesignScreenState extends State<DesignScreen> {
           _lidarCard(),
           const SizedBox(height: 12),
           if (_scanned == null) _manualDimensions(),
+          const SizedBox(height: 12),
+          ListenableBuilder(
+            listenable: widget.state,
+            builder: (context, _) => ChannelMeasureCard(
+              state: widget.state,
+              channels: [
+                for (final s in _referenceLayout(
+                    _room, RoomPoint(_room.length * 0.62, _room.width / 2, 1.15)))
+                  s.channel,
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _build,
@@ -228,6 +241,12 @@ class _DesignScreenState extends State<DesignScreen> {
         ),
       const SizedBox(height: 16),
       Text('Konfigurace přijímače', style: t.textTheme.titleLarge),
+      if (r.config.channels.every((c) => c.eq == null))
+        Text(
+          'Bez měření kanálů sweepem je tu jen geometrie: vzdálenosti a '
+          'dělicí kmitočty. EQ a hlasitosti přibudou, až budou body per kanál.',
+          style: t.textTheme.bodySmall,
+        ),
       Card(
         child: Padding(
           padding: const EdgeInsets.all(12),

@@ -9,6 +9,7 @@ import '../dsp/impulse_response.dart';
 import '../export/frd.dart';
 import '../signal/log_sweep.dart';
 import '../store/session_store.dart';
+import 'compare_screen.dart';
 import 'widgets/response_chart.dart';
 
 /// Phase 3: record a sweep, deconvolve it, read the room's timing.
@@ -69,6 +70,16 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
           appBar: AppBar(
             title: const Text('Impulzní odezva'),
             actions: [
+              if ((s.session?.points.length ?? 0) >= 2)
+                IconButton(
+                  icon: const Icon(Icons.compare_arrows),
+                  tooltip: 'Srovnat body',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => CompareScreen(state: s),
+                    ),
+                  ),
+                ),
               if (ir != null)
                 IconButton(
                   icon: const Icon(Icons.ios_share),

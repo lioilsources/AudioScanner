@@ -102,6 +102,7 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.mic_off),
                     title: const Text('Mikrofon neběží'),
+                    subtitle: Text(s.error ?? 'Klepni pro spuštění.'),
                     onTap: s.startListening,
                   ),
                 ),

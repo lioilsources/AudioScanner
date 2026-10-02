@@ -146,7 +146,8 @@ class AppState extends ChangeNotifier {
     _error = null;
     try {
       if (!await capture.requestPermission()) {
-        _error = 'Bez přístupu k mikrofonu se měřit nedá.';
+        _error = 'Bez přístupu k mikrofonu se měřit nedá. Povol ho v '
+            'Nastavení → AudioScanner → Mikrofon.';
         notifyListeners();
         return;
       }

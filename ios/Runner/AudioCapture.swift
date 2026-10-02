@@ -31,12 +31,17 @@ final class AudioCapture: NSObject {
         try session.setCategory(.playAndRecord,
                                 mode: .measurement,
                                 options: [.defaultToSpeaker])
-        try session.setPreferredSampleRate(sampleRate)
-        try session.setPreferredInputNumberOfChannels(1)
+        // Preferences are requests, not requirements: the real rate is read
+        // back and reported, so a refusal must not keep the mic off.
+        try? session.setPreferredSampleRate(sampleRate)
         // Small buffers keep the RTA responsive; the assembler on the Dart side
         // reframes whatever size actually arrives.
-        try session.setPreferredIOBufferDuration(0.010)
+        try? session.setPreferredIOBufferDuration(0.010)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
+        // Only valid on an active session — set before activation it throws,
+        // which used to abort the whole start. Multichannel input is downmixed
+        // by the converter below anyway.
+        try? session.setPreferredInputNumberOfChannels(1)
 
         var processingDisabled = true
         // Not covered by .measurement: pin the input gain so the OS cannot

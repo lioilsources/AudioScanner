@@ -68,7 +68,7 @@ class _ScanScreenState extends State<ScanScreen> {
                           child: ListTile(
                             leading: const Icon(Icons.mic_off),
                             title: const Text('Mikrofon neběží'),
-                            subtitle: const Text(
+                            subtitle: Text(s.error ??
                                 'Bez něj se změří jen poloha, ne zvuk.'),
                             onTap: s.startListening,
                           ),

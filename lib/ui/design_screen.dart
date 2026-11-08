@@ -13,6 +13,7 @@ import '../export/avr_config.dart';
 import '../model/measurement.dart';
 import 'channel_measure_card.dart';
 import 'widgets/eq_preview.dart';
+import '../l10n/l10n.dart';
 
 /// Phase 5: put the geometry and the measurements together and say what to do.
 class DesignScreen extends StatefulWidget {
@@ -66,8 +67,9 @@ class _DesignScreenState extends State<DesignScreen> {
   /// disk, then a guess. Which one it was is shown, because every modal
   /// prediction and the Schroeder limit hang on it.
   (double, String) get _rt60 {
+    final l = context.l10n;
     final live = widget.state.decayAnalysis?.midBandRt60Seconds;
-    if (live != null) return (live, 'T20 125–500 Hz z poslední odezvy');
+    if (live != null) return (live, l.designRt60Live);
     final session = widget.state.session;
     if (session != null) {
       Measurement? latest;
@@ -76,9 +78,9 @@ class _DesignScreenState extends State<DesignScreen> {
         if (latest == null || p.timestamp.isAfter(latest.timestamp)) latest = p;
       }
       final stored = latest?.impulse?.midBandRt60Seconds;
-      if (stored != null) return (stored, 'T20 125–500 Hz z uloženého sweepu');
+      if (stored != null) return (stored, l.designRt60Stored);
     }
-    return (0.4, 'odhad — změř sweep, Schroeder je zatím jen tip');
+    return (0.4, l.designRt60Guess);
   }
 
   RoomGeometry get _room {
@@ -93,12 +95,12 @@ class _DesignScreenState extends State<DesignScreen> {
     final t = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Návrh'),
+        title: Text(context.l10n.tabDesign),
         actions: [
           if (_report != null)
             IconButton(
               icon: const Icon(Icons.ios_share),
-              tooltip: 'Export konfigurace',
+              tooltip: context.l10n.designExportTooltip,
               onPressed: _export,
             ),
         ],
@@ -130,7 +132,7 @@ class _DesignScreenState extends State<DesignScreen> {
           FilledButton.icon(
             onPressed: _build,
             icon: const Icon(Icons.auto_awesome),
-            label: const Text('Spočítat návrh'),
+            label: Text(context.l10n.designCompute),
           ),
           const SizedBox(height: 16),
           if (_report != null) ..._results(_report!, t),
@@ -142,6 +144,7 @@ class _DesignScreenState extends State<DesignScreen> {
   Widget _lidarCard() {
     final supported = _lidarSupported;
     final scanned = _scanned;
+    final l = context.l10n;
     return Card(
       child: Column(
         children: [
@@ -150,16 +153,14 @@ class _DesignScreenState extends State<DesignScreen> {
                 ? Icons.view_in_ar
                 : Icons.straighten),
             title: Text(switch (supported) {
-              null => 'Zjišťuju, jestli je tu LiDAR…',
-              true => 'LiDAR k dispozici',
-              false => 'Bez LiDARu — rozměry zadej ručně',
+              null => l.designLidarChecking,
+              true => l.designLidarAvailable,
+              false => l.designLidarMissing,
             }),
             subtitle: Text(scanned?.caveat ??
                 (supported == true
-                    ? 'Sken dá stěny na centimetry, takže sedí i body odrazů '
-                        'a vzdálenosti k hranicím, ne jen módy.'
-                    : 'Modální výpočet potřebuje jen tři čísla — o body '
-                        'odrazů a přesné vzdálenosti ke stěnám ale přijdeš.')),
+                    ? l.designLidarHint
+                    : l.designManualHint)),
           ),
           if (supported == true)
             Padding(
@@ -167,7 +168,7 @@ class _DesignScreenState extends State<DesignScreen> {
               child: FilledButton.tonalIcon(
                 onPressed: _scanning ? _stopScan : _startScan,
                 icon: Icon(_scanning ? Icons.stop : Icons.document_scanner),
-                label: Text(_scanning ? 'Ukončit sken' : 'Naskenovat místnost'),
+                label: Text(_scanning ? l.designStopScan : l.designScanRoom),
               ),
             ),
           if (scanned != null)
@@ -176,8 +177,8 @@ class _DesignScreenState extends State<DesignScreen> {
               title: Text('${scanned.geometry.length.toStringAsFixed(2)} × '
                   '${scanned.geometry.width.toStringAsFixed(2)} × '
                   '${scanned.geometry.height.toStringAsFixed(2)} m'),
-              subtitle: Text('${scanned.wallCount} stěn, '
-                  '${scanned.openings.length} otvorů'),
+              subtitle: Text(l.designWallsOpenings(
+                  scanned.wallCount, scanned.openings.length)),
             ),
         ],
       ),
@@ -190,11 +191,14 @@ class _DesignScreenState extends State<DesignScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Rozměry místnosti',
+              Text(context.l10n.designRoomDimensions,
                   style: Theme.of(context).textTheme.titleMedium),
-              _dim('Délka', _length, 2, 12, (v) => setState(() => _length = v)),
-              _dim('Šířka', _width, 2, 10, (v) => setState(() => _width = v)),
-              _dim('Výška', _height, 2, 4, (v) => setState(() => _height = v)),
+              _dim(context.l10n.designLength, _length, 2, 12,
+                  (v) => setState(() => _length = v)),
+              _dim(context.l10n.designWidth, _width, 2, 10,
+                  (v) => setState(() => _width = v)),
+              _dim(context.l10n.designHeight, _height, 2, 4,
+                  (v) => setState(() => _height = v)),
             ],
           ),
         ),
@@ -218,8 +222,9 @@ class _DesignScreenState extends State<DesignScreen> {
       );
 
   List<Widget> _results(DesignReport r, ThemeData t) {
+    final l = context.l10n;
     return [
-      Text('Co s tím udělat', style: t.textTheme.titleLarge),
+      Text(l.designWhatToDo, style: t.textTheme.titleLarge),
       const SizedBox(height: 8),
       for (final f in r.findings)
         Card(
@@ -247,10 +252,10 @@ class _DesignScreenState extends State<DesignScreen> {
           ),
         ),
       const SizedBox(height: 16),
-      Text('Módy místnosti', style: t.textTheme.titleLarge),
-      Text('Nad ${r.room.schroederFrequency.toStringAsFixed(0)} Hz '
-          '(Schroeder) už jednotlivé módy nedávají smysl. '
-          'RT60 ${r.room.rt60.toStringAsFixed(2)} s: ${_rt60.$2}.',
+      Text(l.designRoomModes, style: t.textTheme.titleLarge),
+      Text(
+          l.designModesNote(r.room.schroederFrequency.toStringAsFixed(0),
+              r.room.rt60.toStringAsFixed(2), _rt60.$2),
           style: t.textTheme.bodySmall),
       const SizedBox(height: 8),
       Wrap(
@@ -259,7 +264,7 @@ class _DesignScreenState extends State<DesignScreen> {
         children: [
           for (final m in r.axialModes)
             Chip(
-              label: Text('${m.frequency.toStringAsFixed(0)} Hz · ${m.axis}'),
+              label: Text('${m.frequency.toStringAsFixed(0)} Hz · ${l.modeAxis(m)}'),
               visualDensity: VisualDensity.compact,
             ),
         ],
@@ -274,11 +279,9 @@ class _DesignScreenState extends State<DesignScreen> {
           trailing: Text('${c.flatnessDb.toStringAsFixed(1)} dB'),
         ),
       const SizedBox(height: 16),
-      Text('EQ: změřeno, cíl, předpověď', style: t.textTheme.titleLarge),
+      Text(l.designEqTitle, style: t.textTheme.titleLarge),
       Text(
-        'Předpověď je změřená odezva plus model patnácti pásem přijímače. '
-        'Po zadání EQ změř kanál znovu s přepínačem „po EQ", aby bylo vidět, '
-        'jak blízko model byl.',
+        l.designEqHelp,
         style: t.textTheme.bodySmall,
       ),
       const SizedBox(height: 8),
@@ -292,11 +295,10 @@ class _DesignScreenState extends State<DesignScreen> {
             maxEqHz: math.min(300, r.room.schroederFrequency),
           ),
       const SizedBox(height: 16),
-      Text('Konfigurace přijímače', style: t.textTheme.titleLarge),
+      Text(l.designReceiverConfig, style: t.textTheme.titleLarge),
       if (r.config.channels.every((c) => c.eq == null))
         Text(
-          'Bez měření kanálů sweepem je tu jen geometrie: vzdálenosti a '
-          'dělicí kmitočty. EQ a hlasitosti přibudou, až budou body per kanál.',
+          l.designGeometryOnly,
           style: t.textTheme.bodySmall,
         ),
       Card(
@@ -391,8 +393,9 @@ class _DesignScreenState extends State<DesignScreen> {
     final store = widget.store;
     final report = _report;
     if (store == null || report == null) return;
+    final subject = context.l10n.designShareSubject;
     final f = await store.writeExport('avr_config.txt', report.config.render());
     await SharePlus.instance.share(
-        ShareParams(files: [XFile(f.path)], subject: 'Návrh konfigurace'));
+        ShareParams(files: [XFile(f.path)], subject: subject));
   }
 }

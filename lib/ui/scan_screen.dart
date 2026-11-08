@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../ar/ar_tracking.dart';
 import '../model/session.dart';
+import '../l10n/l10n.dart';
 
 /// Phase 2: walk the room, drop measured points.
 class ScanScreen extends StatefulWidget {
@@ -38,12 +39,12 @@ class _ScanScreenState extends State<ScanScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(session?.name ?? 'Sken místnosti'),
+            title: Text(session?.name ?? context.l10n.scanTitle),
             actions: [
               if (session != null)
                 Padding(
                   padding: const EdgeInsets.only(right: 12),
-                  child: Center(child: Text('${session.points.length} b.')),
+                  child: Center(child: Text(context.l10n.scanPointCount(session.points.length))),
                 ),
             ],
           ),
@@ -67,9 +68,9 @@ class _ScanScreenState extends State<ScanScreen> {
                           color: Theme.of(context).colorScheme.errorContainer,
                           child: ListTile(
                             leading: const Icon(Icons.mic_off),
-                            title: const Text('Mikrofon neběží'),
+                            title: Text(context.l10n.commonMicNotRunning),
                             subtitle: Text(s.error ??
-                                'Bez něj se změří jen poloha, ne zvuk.'),
+                                context.l10n.scanMicNeeded),
                             onTap: s.startListening,
                           ),
                         ),
@@ -78,9 +79,8 @@ class _ScanScreenState extends State<ScanScreen> {
                         onChanged: _originSet
                             ? (v) => setState(() => _continuous = v)
                             : null,
-                        title: const Text('Průběžné měření'),
-                        subtitle: const Text(
-                            'Bod automaticky každých 0,5 m chůze'),
+                        title: Text(context.l10n.scanContinuous),
+                        subtitle: Text(context.l10n.scanContinuousHint),
                         contentPadding: EdgeInsets.zero,
                       ),
                       const Divider(),
@@ -98,7 +98,7 @@ class _ScanScreenState extends State<ScanScreen> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.add_location_alt_outlined),
-                  label: Text(s.measuring ? 'Měřím…' : 'Změřit tady'),
+                  label: Text(s.measuring ? context.l10n.scanMeasuring : context.l10n.scanMeasureHere),
                 ),
         );
       },
@@ -127,7 +127,7 @@ class _ScanScreenState extends State<ScanScreen> {
     setState(() => _busy = false);
     if (point != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bod ${point.id} uložen na ${point.position}')),
+        SnackBar(content: Text(context.l10n.scanPointSaved(point.id, '${point.position}'))),
       );
     }
   }
@@ -165,9 +165,8 @@ class _TrackingCard extends StatelessWidget {
       return Card(
         child: ListTile(
           leading: const Icon(Icons.view_in_ar_outlined),
-          title: const Text('Spustit sledování polohy'),
-          subtitle: const Text(
-              'ARKit — odsud ví appka, kde v místnosti stojíš.'),
+          title: Text(context.l10n.scanStartTracking),
+          subtitle: Text(context.l10n.scanStartTrackingHint),
           onTap: onStart,
         ),
       );
@@ -184,12 +183,12 @@ class _TrackingCard extends StatelessWidget {
               good ? Icons.gps_fixed : Icons.gps_not_fixed,
               color: good ? scheme.primary : scheme.onTertiaryContainer,
             ),
-            title: Text(q.label),
+            title: Text(context.l10n.trackingQuality(q)),
             subtitle: Text(
-              pose?.hint ??
+              context.l10n.poseHint(pose?.reason) ??
                   (originSet
-                      ? 'Poloha: ${pose?.position ?? "—"} m od počátku'
-                      : 'Postav se na místo posluchače a urči počátek.'),
+                      ? context.l10n.scanPosition('${pose?.position ?? "—"}')
+                      : context.l10n.scanSetOriginHint),
             ),
           ),
           if (!originSet)
@@ -198,7 +197,7 @@ class _TrackingCard extends StatelessWidget {
               child: FilledButton.icon(
                 onPressed: good ? onSetOrigin : null,
                 icon: const Icon(Icons.my_location),
-                label: const Text('Tady je počátek'),
+                label: Text(context.l10n.scanOriginHere),
               ),
             ),
         ],
@@ -216,7 +215,7 @@ class _PointList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (session.points.isEmpty) {
       return Center(
-        child: Text('Zatím žádný bod.',
+        child: Text(context.l10n.scanNoPoints,
             style: Theme.of(context).textTheme.bodyMedium),
       );
     }
@@ -229,9 +228,8 @@ class _PointList extends StatelessWidget {
           dense: true,
           leading: CircleAvatar(radius: 14, child: Text(p.id.substring(1))),
           title: Text('${p.position} m'),
-          subtitle: Text('rozptyl 40–300 Hz: '
-              '${p.variationDb().toStringAsFixed(1)} dB · '
-              '${p.rmsDbfs.toStringAsFixed(1)} dBFS'),
+          subtitle: Text(context.l10n.scanPointStats(
+              p.variationDb().toStringAsFixed(1), p.rmsDbfs.toStringAsFixed(1))),
         );
       },
     );
@@ -248,7 +246,17 @@ class _NewSessionForm extends StatefulWidget {
 }
 
 class _NewSessionFormState extends State<_NewSessionForm> {
-  final _name = TextEditingController(text: 'Obývák');
+  final _name = TextEditingController();
+  bool _nameSeeded = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_nameSeeded) {
+      _name.text = context.l10n.scanDefaultRoomName;
+      _nameSeeded = true;
+    }
+  }
   ExcitationSignal _signal = ExcitationSignal.externalSweep;
 
   @override
@@ -261,17 +269,17 @@ class _NewSessionFormState extends State<_NewSessionForm> {
   Widget build(BuildContext context) {
     return ListView(
       children: [
-        Text('Nové měření', style: Theme.of(context).textTheme.titleLarge),
+        Text(context.l10n.scanNewMeasurement, style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
         TextField(
           controller: _name,
-          decoration: const InputDecoration(
-            labelText: 'Název místnosti',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: context.l10n.scanRoomName,
+            border: const OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 16),
-        Text('Čím budeš místnost budit',
+        Text(context.l10n.scanExcitation,
             style: Theme.of(context).textTheme.titleSmall),
         RadioGroup<ExcitationSignal>(
           groupValue: _signal,
@@ -281,10 +289,9 @@ class _NewSessionFormState extends State<_NewSessionForm> {
               for (final s in ExcitationSignal.values)
                 RadioListTile<ExcitationSignal>(
                   value: s,
-                  title: Text(s.label),
+                  title: Text(context.l10n.excitationSignal(s)),
                   subtitle: s == ExcitationSignal.phonePinkNoise
-                      ? const Text('Jen orientačně — reproduktor telefonu '
-                          'basy vůbec nevydá.')
+                      ? Text(context.l10n.scanPhoneNoiseHint)
                       : null,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -294,7 +301,7 @@ class _NewSessionFormState extends State<_NewSessionForm> {
         const SizedBox(height: 16),
         FilledButton(
           onPressed: () => widget.onCreate(_name.text.trim(), _signal),
-          child: const Text('Začít'),
+          child: Text(context.l10n.scanStart),
         ),
       ],
     );

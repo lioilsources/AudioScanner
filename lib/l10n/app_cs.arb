@@ -1,0 +1,535 @@
+{
+  "@@locale": "cs",
+  "tabScan": "Sken",
+  "tabMap": "Mapa",
+  "tabResponse": "Odezva",
+  "tabDesign": "Návrh",
+  "tabSignals": "Signály",
+  "rtaSnapshotFailed": "Snímek se neuložil.",
+  "rtaSavedAsPoint": "Uloženo jako bod {id}.",
+  "@rtaSavedAsPoint": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "rtaSavedAsPointNoPose": "Uloženo jako bod {id} (bez polohy).",
+  "@rtaSavedAsPointNoPose": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "rtaCalibrationLoaded": "Kalibrace {name}: {count, plural, =1{1 bod} few{{count} body} many{{count} bodu} other{{count} bodů}}, {min} … {max} dB",
+  "@rtaCalibrationLoaded": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "rtaFileUnreadable": "Soubor nejde přečíst: {message}",
+  "@rtaFileUnreadable": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "rtaOffsetTitle": "Offset dB SPL",
+  "rtaOffsetHelp": "Pusť tón 1 kHz, odečti hladinu na SPL metru a zadej rozdíl proti tomu, co ukazuje analyzátor. S nenulovým offsetem se hladiny značí jako odhad SPL; bez něj zůstávají dBFS.",
+  "commonReset": "Vynulovat",
+  "commonCancel": "Zrušit",
+  "commonSave": "Uložit",
+  "commonStop": "Zastavit",
+  "commonStartMic": "Spustit mikrofon",
+  "tabAnalyzer": "Analyzátor",
+  "rtaUnfreeze": "Rozmrazit",
+  "rtaFreeze": "Zmrazit",
+  "rtaPeakHold": "Peak hold",
+  "rtaMaxMinTraces": "Stopy max / min",
+  "rtaResetTraces": "Vynulovat stopy",
+  "rtaSaveAsPoint": "Uložit jako bod (3 s)",
+  "rtaMicCalibration": "Kalibrace mikrofonu…",
+  "rtaRemoveCalibration": "Odebrat kalibraci",
+  "rtaOffsetMenu": "Offset dB SPL…",
+  "rtaRouteChip": "{route} · {rate} Hz · bez úprav signálu",
+  "@rtaRouteChip": {
+    "placeholders": {
+      "route": {
+        "type": "String"
+      },
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "rtaCalibrationChip": "Kalibrace {name}: {count, plural, =1{1 bod} few{{count} body} many{{count} bodu} other{{count} bodů}}, korekce {min} … {max} dB",
+  "@rtaCalibrationChip": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      },
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "rtaSplEstimate": "dB SPL (odhad)",
+  "rtaFrozenHint": "Zmrazeno — mikrofon běží dál, jen se nekreslí.",
+  "rtaRelativeHint": "Hladiny jsou relativní (dBFS). Obrys se objeví, až uložíš první bod — ten je referencí pro ostatní.",
+  "rtaReferenceHint": "Plné sloupce = tady. Obrys = referenční bod.",
+  "rtaEnvelopeHint": "Červená = max, zelená = min od vynulování.",
+  "rtaMicStopped": "mikrofon stojí",
+  "rtaSilence": "ticho — hraje signál?",
+  "rtaPlaceholder": "Spusť mikrofon a pusť do místnosti signál.",
+  "rtaBandsInfo": "{count} třetinooktávových pásem, 20 Hz – 20 kHz",
+  "@rtaBandsInfo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "scanTitle": "Sken místnosti",
+  "scanPointCount": "{count} b.",
+  "@scanPointCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "commonMicNotRunning": "Mikrofon neběží",
+  "scanMicNeeded": "Bez něj se změří jen poloha, ne zvuk.",
+  "scanContinuous": "Průběžné měření",
+  "scanContinuousHint": "Bod automaticky každých 0,5 m chůze",
+  "scanMeasuring": "Měřím…",
+  "scanMeasureHere": "Změřit tady",
+  "scanPointSaved": "Bod {id} uložen na {position}",
+  "@scanPointSaved": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "position": {
+        "type": "String"
+      }
+    }
+  },
+  "scanStartTracking": "Spustit sledování polohy",
+  "scanStartTrackingHint": "ARKit — odsud ví appka, kde v místnosti stojíš.",
+  "scanPosition": "Poloha: {position} m od počátku",
+  "@scanPosition": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
+  "scanSetOriginHint": "Postav se na místo posluchače a urči počátek.",
+  "scanOriginHere": "Tady je počátek",
+  "scanNoPoints": "Zatím žádný bod.",
+  "scanPointStats": "rozptyl 40–300 Hz: {variation} dB · {rms} dBFS",
+  "@scanPointStats": {
+    "placeholders": {
+      "variation": {
+        "type": "String"
+      },
+      "rms": {
+        "type": "String"
+      }
+    }
+  },
+  "scanDefaultRoomName": "Obývák",
+  "scanNewMeasurement": "Nové měření",
+  "scanRoomName": "Název místnosti",
+  "scanExcitation": "Čím budeš místnost budit",
+  "scanPhoneNoiseHint": "Jen orientačně — reproduktor telefonu basy vůbec nevydá.",
+  "scanStart": "Začít",
+  "mapExportTooltip": "Export FRD + JSON",
+  "mapNeedsTwoPoints": "Mapa potřebuje aspoň dva body. Projdi místnost a průběžně měř.",
+  "mapShareText": "FRD po bodech (import do REW / VituixCAD) a celá session v JSON.",
+  "mapFlattestSpot": "Nejrovnější místo: {id} na {position} m (rozptyl {variation} dB v 40–300 Hz)",
+  "@mapFlattestSpot": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "position": {
+        "type": "String"
+      },
+      "variation": {
+        "type": "String"
+      }
+    }
+  },
+  "signalsSweepHelp": "Jediný signál, ze kterého jde spočítat impulzní odezvu, doba dozvuku a první odrazy. Přehraj ho z počítače nebo DACu do beden, telefon nech nahrávat.",
+  "signalsLength": "Délka",
+  "signalsFrom": "Od",
+  "signalsTo": "Do",
+  "signalsMonoNoChannel": "Mono (bez kanálu)",
+  "signalsExportWav": "Export WAV",
+  "signalsPinkNoise": "Růžový šum",
+  "signalsPinkHelp": "Stejná energie v každé oktávě. Dá jen frekvenční charakteristiku, žádný čas ani odrazy — na rychlé „dělá to tu něco?“ to stačí.",
+  "signalsExportPink": "Export 30 s WAV",
+  "signalsHowTo": "Jak měřit",
+  "signalsStep1": "Signál pusť z počítače do beden, ne z telefonu.",
+  "signalsStep2": "Hlasitost nastav tak, aby analyzátor ukazoval kolem −20 dBFS. Přebuzení vypadá jako odraz.",
+  "signalsStep3": "Telefon drž svisle na natažené ruce, mikrofonem k bednám.",
+  "signalsStep4": "Odpoj Bluetooth sluchátka — komprese i latence měření znehodnotí.",
+  "signalsNoteMono": "Mono do obou beden najednou sečte L a R a jejich rozdíl zmizí v součtu. Pro měření kanálů vyber kanál.",
+  "signalsNoteStereo": "Stereo soubor se signálem jen v jednom kanálu — pustí ho cokoli, co hraje stereo.",
+  "signalsNoteChannel": "Mono soubor pojmenovaný podle kanálu. Nasměruj ho na správný vstup přijímače z DAW nebo přes vícekanálový vstup; laptop se stereo výstupem ho na tenhle kanál nedostane.",
+  "channelsTitle": "Měření kanálů",
+  "channelsHelp": "Stoupni si na místo posluchače. Pro každý kanál: začni nahrávat, pusť do něj sweep ze záložky Signály, klepni na Hotovo. Bez těchto bodů návrh nemá z čeho udělat EQ a hlasitosti.",
+  "channelsSweepLength": "Sweep {seconds} s",
+  "@channelsSweepLength": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "channelsVerifyAfterEq": "Ověření po zadání EQ",
+  "channelsVerifyAfterEqHint": "Bod se uloží jako „po EQ“ a nepřepíše ten, ze kterého se EQ počítalo.",
+  "channelsRecording": "Nahrávám {seconds} s — teď pusť sweep",
+  "@channelsRecording": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "channelsNotMeasured": "nezměřeno",
+  "channelsMeasuredNoise": "změřeno šumem",
+  "channelsSummary": "{count}× · přímý zvuk za {ms} ms",
+  "@channelsSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "ms": {
+        "type": "String"
+      }
+    }
+  },
+  "channelsSummaryT20": "{count}× · přímý zvuk za {ms} ms, T20 {t20} s",
+  "@channelsSummaryT20": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "ms": {
+        "type": "String"
+      },
+      "t20": {
+        "type": "String"
+      }
+    }
+  },
+  "commonDone": "Hotovo",
+  "channelsMeasure": "Změřit",
+  "channelsAdd": "Přidat",
+  "channelsAgain": "Znovu",
+  "compareTitle": "Srovnání",
+  "compareNeedsTwoPoints": "Srovnání potřebuje aspoň dva body.",
+  "commonWithRoom": "s místností",
+  "commonDirectSound": "přímý zvuk",
+  "compareAfterEq": "po EQ",
+  "compareBandsA": "A (pásma)",
+  "compareBandsB": "B (pásma)",
+  "compareArrivalDiff": "Rozdíl příchodu A − B",
+  "compareBroadbandDiff": "Širokopásmová hladina A − B",
+  "compareWorstBelow300": "Největší rozdíl pod 300 Hz",
+  "compareWorstValue": "{db} dB v pásmu {band} Hz",
+  "@compareWorstValue": {
+    "placeholders": {
+      "db": {
+        "type": "String"
+      },
+      "band": {
+        "type": "String"
+      }
+    }
+  },
+  "compareTrimNote": "Distance a level trim srovnají rozdíl příchodu a hladiny. Rozdíl tvaru pod 300 Hz nesrovnají — ten dělá jiná stěna v jiné vzdálenosti a řeší se posunem.",
+  "designRt60Live": "T20 125–500 Hz z poslední odezvy",
+  "designRt60Stored": "T20 125–500 Hz z uloženého sweepu",
+  "designRt60Guess": "odhad — změř sweep, Schroeder je zatím jen tip",
+  "designExportTooltip": "Export konfigurace",
+  "designCompute": "Spočítat návrh",
+  "designLidarChecking": "Zjišťuju, jestli je tu LiDAR…",
+  "designLidarAvailable": "LiDAR k dispozici",
+  "designLidarMissing": "Bez LiDARu — rozměry zadej ručně",
+  "designLidarHint": "Sken dá stěny na centimetry, takže sedí i body odrazů a vzdálenosti k hranicím, ne jen módy.",
+  "designManualHint": "Modální výpočet potřebuje jen tři čísla — o body odrazů a přesné vzdálenosti ke stěnám ale přijdeš.",
+  "designStopScan": "Ukončit sken",
+  "designScanRoom": "Naskenovat místnost",
+  "designWallsOpenings": "{walls, plural, =1{1 stěna} few{{walls} stěny} many{{walls} stěny} other{{walls} stěn}}, {openings, plural, =1{1 otvor} few{{openings} otvory} many{{openings} otvoru} other{{openings} otvorů}}",
+  "@designWallsOpenings": {
+    "placeholders": {
+      "walls": {
+        "type": "int"
+      },
+      "openings": {
+        "type": "int"
+      }
+    }
+  },
+  "designRoomDimensions": "Rozměry místnosti",
+  "designLength": "Délka",
+  "designWidth": "Šířka",
+  "designHeight": "Výška",
+  "designWhatToDo": "Co s tím udělat",
+  "designRoomModes": "Módy místnosti",
+  "designModesNote": "Nad {schroeder} Hz (Schroeder) už jednotlivé módy nedávají smysl. RT60 {rt60} s: {source}.",
+  "@designModesNote": {
+    "placeholders": {
+      "schroeder": {
+        "type": "String"
+      },
+      "rt60": {
+        "type": "String"
+      },
+      "source": {
+        "type": "String"
+      }
+    }
+  },
+  "designEqTitle": "EQ: změřeno, cíl, předpověď",
+  "designEqHelp": "Předpověď je změřená odezva plus model patnácti pásem přijímače. Po zadání EQ změř kanál znovu s přepínačem „po EQ“, aby bylo vidět, jak blízko model byl.",
+  "designReceiverConfig": "Konfigurace přijímače",
+  "designGeometryOnly": "Bez měření kanálů sweepem je tu jen geometrie: vzdálenosti a dělicí kmitočty. EQ a hlasitosti přibudou, až budou body per kanál.",
+  "designShareSubject": "Návrh konfigurace",
+  "impulseTitle": "Impulzní odezva",
+  "impulseCompareTooltip": "Srovnat body",
+  "impulseExportTooltip": "Export FRD s fází",
+  "impulseTapToStart": "Klepni pro spuštění.",
+  "impulseSweepTitle": "Sweep, který pustíš do beden",
+  "impulseSweepHelp": "{startHz} – {endHz} Hz, {seconds} s. Musí sedět s tím, co přehráváš — jinak dekonvoluce vrátí nesmysl.",
+  "@impulseSweepHelp": {
+    "placeholders": {
+      "startHz": {
+        "type": "int"
+      },
+      "endHz": {
+        "type": "int"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "impulseRecording": "Nahrávám — {seconds} s",
+  "@impulseRecording": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "impulsePlaySweepNow": "Teď pusť sweep z počítače.",
+  "impulseStartRecording": "Začít nahrávat, pak pustit sweep",
+  "impulseFrequencyResponse": "Frekvenční odezva",
+  "impulseWithRoom": "s místností (1 s)",
+  "impulseDirectWindow": "přímý zvuk (okno {ms} ms)",
+  "@impulseDirectWindow": {
+    "placeholders": {
+      "ms": {
+        "type": "String"
+      }
+    }
+  },
+  "impulseWindow": "Okno",
+  "impulseWindowHelp": "Delší okno vidí níž (teď platné nad {hz} Hz), ale pustí dovnitř první odraz. Pod hranicí se křivka nevyhlazuje ani nekomentuje: je to okno, ne místnost.",
+  "@impulseWindowHelp": {
+    "placeholders": {
+      "hz": {
+        "type": "String"
+      }
+    }
+  },
+  "impulseToFirstReflection": "Do prvního odrazu ({ms} ms)",
+  "@impulseToFirstReflection": {
+    "placeholders": {
+      "ms": {
+        "type": "String"
+      }
+    }
+  },
+  "impulseTime": "Čas",
+  "impulseImpulse": "impuls",
+  "impulseTimeHelp": "Modré je okno, oranžová čára první nalezený odraz. Čas nula je přímý zvuk.",
+  "impulseSpectrogram": "Spektrogram",
+  "commonHide": "Skrýt",
+  "commonShow": "Zobrazit",
+  "impulseSpectrogramHelp": "Čas v ms od přímého zvuku, frekvence nahoru, barva je hladina do −60 dB. Vodorovný pruh, který přežije ostatní, je mód; tabulka nad tím říká totéž číslem.",
+  "impulseDecayByOctave": "Doznívání po oktávách",
+  "impulseMidNoT20": "Střední pásma nedoklesla dost na T20.",
+  "impulseMidT20": "Střed 125–500 Hz: T20 {seconds} s — to je RT60, se kterým počítá návrh.",
+  "@impulseMidT20": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "impulseDecayHelp": "V basech je RT60 z telefonu spíš odhad: šum pozadí tam bývá nejblíž a „—“ znamená, že dozvuk pod něj nedoklesl. C50 nad nulou: přímý zvuk s prvními odrazy nese víc energie než dozvuk.",
+  "impulseResult": "Výsledek",
+  "impulseDirectArrived": "Přímý zvuk dorazil za",
+  "impulseDirectArrivedHelp": "Zpoždění přehrávání plus doba letu — samo o sobě nic neříká, ale rozdíl mezi L a R bednou ano.",
+  "impulseFirstReflection": "První odraz",
+  "impulseNotFound": "nenalezen",
+  "impulseAfterDirect": "{time} po přímém zvuku",
+  "@impulseAfterDirect": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "impulseNoReflectionHelp": "Buď tam žádný není, nebo se schoval ve vyzvánění přímého impulsu.",
+  "impulseExtraPath": "Dráha navíc ≈ {metres} m.",
+  "@impulseExtraPath": {
+    "placeholders": {
+      "metres": {
+        "type": "String"
+      }
+    }
+  },
+  "impulseUnmeasurable": "nezměřitelné",
+  "impulseRt60NoiseHelp": "Dozvuk nedoklesl dost hluboko nad šumové pozadí — hlasitěji, nebo v tišší chvíli.",
+  "impulseRt60Help": "Rozdíl mezi T20 a T30 napovídá, jak čisté je doznívání.",
+  "impulseGating": "Okno (gating)",
+  "impulseValidAbove": "platné nad {hz} Hz",
+  "@impulseValidAbove": {
+    "placeholders": {
+      "hz": {
+        "type": "String"
+      }
+    }
+  },
+  "impulseGatingHelp": "Pod tím okno neuvidí ani jednu periodu — křivka tam je artefakt okna, ne místnosti.",
+  "impulseSchroeder": "Schroederova křivka doznívání",
+  "impulseHdAt": "HD{order} při 100 Hz / 1 kHz",
+  "@impulseHdAt": {
+    "placeholders": {
+      "order": {
+        "type": "int"
+      }
+    }
+  },
+  "impulseHd2Help": "Harmonické leží v záporném čase Farinovy dekonvoluce; tady se z něj čtou místo zahazování. −40 dB je 1 %.",
+  "impulseHd3Help": "Třetí harmonická roste s přebuzením rychleji než druhá.",
+  "impulseDistortionHot": "Zkreslení nad −30 dB",
+  "impulseDistortionHotHelp": "Buď je sweep příliš nahlas, nebo je repro na hraně. Ohon zkreslení vypadá v impulzu jako odraz — uber hlasitost a změř znovu, než něčemu uvěříš.",
+  "eqMeasured": "změřeno",
+  "eqTarget": "cíl",
+  "eqPredicted": "předpověď po EQ",
+  "eqMeasuredAfter": "změřeno po EQ",
+  "eqDeviation": "Odchylka od cíle 40–{maxHz} Hz",
+  "@eqDeviation": {
+    "placeholders": {
+      "maxHz": {
+        "type": "int"
+      }
+    }
+  },
+  "eqAfterEntering": "Po zadání do přijímače",
+  "eqPredictionVsReality": "Předpověď vs. skutečnost",
+  "eqStubborn": "Zůstane dál od cíle než 6 dB: {bands}. To je interference, ne nedostatek výkonu — řeší se posunem repro nebo posluchače, ne dalším zdvihem.",
+  "@eqStubborn": {
+    "placeholders": {
+      "bands": {
+        "type": "String"
+      }
+    }
+  },
+  "eqModelOk": "Filtr přijímače se chová zhruba jako model.",
+  "eqModelOff": "Skutečný filtr přijímače se od modelu liší o víc, než se čekalo — jeho pásma jsou nejspíš širší nebo užší, než se tu předpokládá.",
+  "eqTargetCurve": "Cílová křivka",
+  "eqFlat": "plochá",
+  "eqTargetHelp": "Ne rovná: nad pár kHz ucho slyší přímý zvuk, mikrofon sčítá i odrazy, a srovnaná měřená křivka zní tupě. Mírný sklon nahoře a trocha basu dole je to, co lidé v slepém poslechu volí.",
+  "eqBassLift": "Zdvih basů",
+  "eqBassBelow": "Basy pod",
+  "eqTilt": "Sklon",
+  "eqDbPerOctave": "dB/okt",
+  "eqTiltFrom": "Sklon od",
+  "errorMicPermission": "Bez přístupu k mikrofonu se měřit nedá. Povol ho v Nastavení → AudioScanner → Mikrofon.",
+  "errorMic": "Mikrofon: {error}",
+  "@errorMic": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "errorMicStart": "Nepodařilo se spustit mikrofon: {error}",
+  "@errorMicStart": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "errorNoArkit": "Tohle zařízení neumí ARKit world tracking — body se nedají umísťovat do prostoru.",
+  "errorRecordingTooShort": "Nahrávka je kratší než sweep ({recorded} s z {expected} s). Spusť nahrávání dřív, než pustíš signál.",
+  "@errorRecordingTooShort": {
+    "placeholders": {
+      "recorded": {
+        "type": "String"
+      },
+      "expected": {
+        "type": "String"
+      }
+    }
+  },
+  "sessionSnapshots": "Snímky",
+  "errorTrackingUnreliable": "Sledování polohy není spolehlivé — bod by seděl jinde, než stojíš.",
+  "errorNoSound": "Za {seconds} s nedorazil žádný zvuk.",
+  "@errorNoSound": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "noteSnapshotNoPose": "snímek z analyzátoru, bez polohy",
+  "sessionChannels": "Kanály",
+  "trackingOk": "Sledování OK",
+  "trackingLimited": "Slabé sledování",
+  "trackingUnavailable": "Bez sledování",
+  "poseHintFeatures": "Málo detailů v obraze — namiř telefon na něco členitého, ne na holou stěnu.",
+  "poseHintMotion": "Moc rychlý pohyb — jdi pomaleji.",
+  "poseHintLight": "Málo světla — rozsviť, kamera nevidí, kde je.",
+  "poseHintInitializing": "ARKit se rozjíždí, chvíli se pohybuj.",
+  "poseHintRelocalizing": "Hledá se zpět původní bod — vrať se, kde jsi začínal.",
+  "signalPhonePink": "Růžový šum z telefonu",
+  "signalExternalPink": "Růžový šum z beden",
+  "signalExternalSweep": "Sweep z beden",
+  "captureWarningBluetooth": "Bluetooth mikrofon: komprese a latence měření znehodnotí. Odpoj sluchátka a měř vestavěným mikrofonem.",
+  "captureWarningProcessing": "Systém nevypnul úpravy signálu (AGC / potlačení šumu). Naměřené rozdíly mezi místy budou zkreslené.",
+  "captureWarningMeasurementMode": "Nepodařilo se zapnout measurement mode — mikrofon má vlastní korekci frekvenční charakteristiky.",
+  "captureRouteUnknown": "neznámý",
+  "axisLength": "délka",
+  "axisWidth": "šířka",
+  "axisHeight": "výška"
+}

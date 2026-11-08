@@ -7,6 +7,7 @@ import '../app_state.dart';
 import '../dsp/octave_bands.dart';
 import '../model/mic_calibration.dart';
 import 'widgets/spectrum_bars.dart';
+import '../l10n/l10n.dart';
 
 /// Phase 1: the live analyser.
 ///
@@ -40,9 +41,10 @@ class _RtaScreenState extends State<RtaScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(point == null
-            ? (s.error ?? 'Snímek se neuložil.')
-            : 'Uloženo jako bod ${point.id}'
-                '${point.arAccuracy == null ? ' (bez polohy)' : ''}.'),
+            ? (s.error ?? context.l10n.rtaSnapshotFailed)
+            : point.arAccuracy == null
+                ? context.l10n.rtaSavedAsPointNoPose(point.id)
+                : context.l10n.rtaSavedAsPoint(point.id)),
       ));
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -62,13 +64,13 @@ class _RtaScreenState extends State<RtaScreen> {
       await s.setCalibration(cal);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Kalibrace $name: ${cal.points.length} bodů, '
-            '${cal.minDb.toStringAsFixed(1)} … ${cal.maxDb.toStringAsFixed(1)} dB'),
+        content: Text(context.l10n.rtaCalibrationLoaded(name, cal.points.length,
+            cal.minDb.toStringAsFixed(1), cal.maxDb.toStringAsFixed(1))),
       ));
     } on FormatException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Soubor nejde přečíst: ${e.message}')));
+          SnackBar(content: Text(context.l10n.rtaFileUnreadable(e.message))));
     }
   }
 
@@ -79,15 +81,11 @@ class _RtaScreenState extends State<RtaScreen> {
     final value = await showDialog<double>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Offset dB SPL'),
+        title: Text(ctx.l10n.rtaOffsetTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Pusť tón 1 kHz, odečti hladinu na SPL metru a zadej rozdíl '
-              'proti tomu, co ukazuje analyzátor. S nenulovým offsetem se '
-              'hladiny značí jako odhad SPL; bez něj zůstávají dBFS.',
-            ),
+            Text(ctx.l10n.rtaOffsetHelp),
             TextField(
               controller: controller,
               keyboardType:
@@ -100,13 +98,13 @@ class _RtaScreenState extends State<RtaScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, 0.0),
-              child: const Text('Vynulovat')),
+              child: Text(ctx.l10n.commonReset)),
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Zrušit')),
+              onPressed: () => Navigator.pop(ctx), child: Text(ctx.l10n.commonCancel)),
           FilledButton(
             onPressed: () => Navigator.pop(
                 ctx, double.tryParse(controller.text.replaceAll(',', '.'))),
-            child: const Text('Uložit'),
+            child: Text(ctx.l10n.commonSave),
           ),
         ],
       ),
@@ -124,20 +122,21 @@ class _RtaScreenState extends State<RtaScreen> {
         final status = s.captureStatus;
         final ctx = s.correctionContext;
         final cal = s.calibration;
+        final l = context.l10n;
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Analyzátor'),
+            title: Text(l.tabAnalyzer),
             actions: [
               IconButton(
                 icon: Icon(s.listening ? Icons.stop : Icons.play_arrow),
-                tooltip: s.listening ? 'Zastavit' : 'Spustit mikrofon',
+                tooltip: s.listening ? l.commonStop : l.commonStartMic,
                 onPressed: () =>
                     s.listening ? s.stopListening() : s.startListening(),
               ),
               IconButton(
                 icon: Icon(s.frozen ? Icons.play_circle_outline : Icons.pause_circle_outline),
-                tooltip: s.frozen ? 'Rozmrazit' : 'Zmrazit',
+                tooltip: s.frozen ? l.rtaUnfreeze : l.rtaFreeze,
                 onPressed: s.listening ? () => s.setFrozen(!s.frozen) : null,
               ),
               PopupMenuButton<String>(
@@ -153,24 +152,24 @@ class _RtaScreenState extends State<RtaScreen> {
                 },
                 itemBuilder: (_) => [
                   CheckedPopupMenuItem(
-                      value: 'peak', checked: _showPeak, child: const Text('Peak hold')),
+                      value: 'peak', checked: _showPeak, child: Text(l.rtaPeakHold)),
                   CheckedPopupMenuItem(
                       value: 'env',
                       checked: _showEnvelope,
-                      child: const Text('Stopy max / min')),
-                  const PopupMenuItem(value: 'reset', child: Text('Vynulovat stopy')),
+                      child: Text(l.rtaMaxMinTraces)),
+                  PopupMenuItem(value: 'reset', child: Text(l.rtaResetTraces)),
                   PopupMenuItem(
                       value: 'save',
                       enabled: s.listening && !_saving,
-                      child: const Text('Uložit jako bod (3 s)')),
+                      child: Text(l.rtaSaveAsPoint)),
                   const PopupMenuDivider(),
-                  const PopupMenuItem(
-                      value: 'cal', child: Text('Kalibrace mikrofonu…')),
+                  PopupMenuItem(
+                      value: 'cal', child: Text(l.rtaMicCalibration)),
                   if (cal != null)
-                    const PopupMenuItem(
-                        value: 'nocal', child: Text('Odebrat kalibraci')),
-                  const PopupMenuItem(
-                      value: 'offset', child: Text('Offset dB SPL…')),
+                    PopupMenuItem(
+                        value: 'nocal', child: Text(l.rtaRemoveCalibration)),
+                  PopupMenuItem(
+                      value: 'offset', child: Text(l.rtaOffsetMenu)),
                 ],
               ),
             ],
@@ -181,20 +180,20 @@ class _RtaScreenState extends State<RtaScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (s.error != null) _Banner(text: s.error!, onClose: s.clearError),
-                if (status?.warning != null)
-                  _Banner(text: status!.warning!, severity: _Severity.warning),
+                if (l.captureWarning(status) != null)
+                  _Banner(text: l.captureWarning(status)!, severity: _Severity.warning),
                 if (status != null && status.isTrustworthy)
                   _Chip(
                     icon: Icons.check_circle_outline,
-                    text: '${status.route} · '
-                        '${status.sampleRate.toStringAsFixed(0)} Hz · bez úprav signálu',
+                    text: l.rtaRouteChip(l.captureRoute(status),
+                        status.sampleRate.toStringAsFixed(0)),
                   ),
                 if (cal != null)
                   _Chip(
                     icon: Icons.tune,
-                    text: 'Kalibrace ${cal.name}: ${cal.points.length} bodů, '
-                        'korekce ${(-cal.maxDb).toStringAsFixed(1)} … '
-                        '${(-cal.minDb).toStringAsFixed(1)} dB',
+                    text: l.rtaCalibrationChip(cal.name, cal.points.length,
+                        (-cal.maxDb).toStringAsFixed(1),
+                        (-cal.minDb).toStringAsFixed(1)),
                   ),
                 const SizedBox(height: 12),
                 _LevelRow(
@@ -202,7 +201,7 @@ class _RtaScreenState extends State<RtaScreen> {
                       ? null
                       : spectrum.rmsDbfs + ctx.calibrationOffsetDb,
                   listening: s.listening,
-                  unit: ctx.hasSplOffset ? 'dB SPL (odhad)' : 'dBFS',
+                  unit: ctx.hasSplOffset ? l.rtaSplEstimate : 'dBFS',
                 ),
                 const SizedBox(height: 12),
                 Expanded(
@@ -227,12 +226,12 @@ class _RtaScreenState extends State<RtaScreen> {
                 const SizedBox(height: 8),
                 Text(
                   s.frozen
-                      ? 'Zmrazeno — mikrofon běží dál, jen se nekreslí.'
+                      ? l.rtaFrozenHint
                       : s.referenceBands == null
-                          ? 'Hladiny jsou relativní (dBFS). Obrys se objeví, až '
-                              'uložíš první bod — ten je referencí pro ostatní.'
-                          : 'Plné sloupce = tady. Obrys = referenční bod.'
-                              '${_showEnvelope ? ' Červená = max, zelená = min od vynulování.' : ''}',
+                          ? l.rtaRelativeHint
+                          : _showEnvelope
+                              ? '${l.rtaReferenceHint} ${l.rtaEnvelopeHint}'
+                              : l.rtaReferenceHint,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -276,9 +275,9 @@ class _LevelRow extends StatelessWidget {
         Text(unit, style: t.textTheme.titleMedium),
         const Spacer(),
         if (!listening)
-          Text('mikrofon stojí', style: t.textTheme.bodySmall)
+          Text(context.l10n.rtaMicStopped, style: t.textTheme.bodySmall)
         else if (tooQuiet)
-          Text('ticho — hraje signál?',
+          Text(context.l10n.rtaSilence,
               style: t.textTheme.bodySmall
                   ?.copyWith(color: t.colorScheme.error)),
       ],
@@ -297,11 +296,10 @@ class _Placeholder extends StatelessWidget {
             Icon(Icons.graphic_eq,
                 size: 48, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 12),
-            Text('Spusť mikrofon a pusť do místnosti signál.',
+            Text(context.l10n.rtaPlaceholder,
                 style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 4),
-            Text('${OctaveBands.all.length} třetinooktávových pásem, '
-                '20 Hz – 20 kHz',
+            Text(context.l10n.rtaBandsInfo(OctaveBands.all.length),
                 style: Theme.of(context).textTheme.bodySmall),
           ],
         ),

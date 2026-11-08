@@ -9,6 +9,7 @@ import '../model/session.dart';
 import '../room/speaker_layout.dart';
 import '../store/session_store.dart';
 import 'widgets/response_chart.dart';
+import '../l10n/l10n.dart';
 
 /// Two points of the session side by side — L against R, before against
 /// after EQ, this seat against that one.
@@ -92,12 +93,12 @@ class _CompareScreenState extends State<CompareScreen> {
     final pointsA = _sessionA?.points ?? const <Measurement>[];
     final pointsB = _sessionB?.points ?? const <Measurement>[];
     return Scaffold(
-      appBar: AppBar(title: const Text('Srovnání')),
+      appBar: AppBar(title: Text(context.l10n.compareTitle)),
       body: total < 2
-          ? const Center(
+          ? Center(
               child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text('Srovnání potřebuje aspoň dva body.',
+                padding: const EdgeInsets.all(32),
+                child: Text(context.l10n.compareNeedsTwoPoints,
                     textAlign: TextAlign.center),
               ),
             )
@@ -138,9 +139,9 @@ class _CompareScreenState extends State<CompareScreen> {
                     children: [
                       if (_anA != null && _anB != null)
                         SegmentedButton<bool>(
-                          segments: const [
-                            ButtonSegment(value: false, label: Text('s místností')),
-                            ButtonSegment(value: true, label: Text('přímý zvuk')),
+                          segments: [
+                            ButtonSegment(value: false, label: Text(context.l10n.commonWithRoom)),
+                            ButtonSegment(value: true, label: Text(context.l10n.commonDirectSound)),
                           ],
                           selected: {_gatedView},
                           showSelectedIcon: false,
@@ -184,7 +185,8 @@ class _CompareScreenState extends State<CompareScreen> {
             items: [
               for (final s in _choices)
                 DropdownMenuItem(
-                    value: s, child: Text('${s.name} · ${s.points.length} b.')),
+                    value: s,
+                    child: Text('${s.name} · ${context.l10n.scanPointCount(s.points.length)}')),
             ],
             onChanged: onChanged,
           ),
@@ -213,12 +215,12 @@ class _CompareScreenState extends State<CompareScreen> {
     );
   }
 
-  static String _name(Measurement p) {
+  String _name(Measurement p) {
     final ch = p.channel == null
         ? null
         : Channel.values.where((c) => c.name == p.channel).firstOrNull;
     final base = ch?.label ?? '${p.id} ${p.position}';
-    return '$base${p.afterEq ? ' · po EQ' : ''}'
+    return '$base${p.afterEq ? ' · ${context.l10n.compareAfterEq}' : ''}'
         '${p.impulse != null ? ' · sweep' : ''}';
   }
 
@@ -264,8 +266,8 @@ class _CompareScreenState extends State<CompareScreen> {
     final b = ctx.correctedBands(_b!.bandsDb);
     return ResponseChart(
       curves: [
-        ResponseCurve(frequencies: freqs, levelsDb: a, label: 'A (pásma)', color: colorA),
-        ResponseCurve(frequencies: freqs, levelsDb: b, label: 'B (pásma)', color: colorB),
+        ResponseCurve(frequencies: freqs, levelsDb: a, label: context.l10n.compareBandsA, color: colorA),
+        ResponseCurve(frequencies: freqs, levelsDb: b, label: context.l10n.compareBandsB, color: colorB),
         ResponseCurve(
             frequencies: freqs,
             levelsDb: [for (var i = 0; i < a.length; i++) a[i] - b[i]],
@@ -279,11 +281,12 @@ class _CompareScreenState extends State<CompareScreen> {
   Widget _numbers(ThemeData t) {
     final a = _a!, b = _b!;
     final rows = <(String, String)>[];
+    final l = context.l10n;
 
     final ia = a.impulse, ib = b.impulse;
     if (ia != null && ib != null) {
       final dt = ia.arrivalMs - ib.arrivalMs;
-      rows.add(('Rozdíl příchodu A − B',
+      rows.add((l.compareArrivalDiff,
           '${dt.toStringAsFixed(2)} ms ≈ ${(dt * 0.343).toStringAsFixed(1)} cm'));
       if (ia.rt20 != null && ib.rt20 != null) {
         rows.add(('T20',
@@ -291,7 +294,7 @@ class _CompareScreenState extends State<CompareScreen> {
                 '${(ib.rt20!.inMilliseconds / 1000).toStringAsFixed(2)} s'));
       }
     }
-    rows.add(('Širokopásmová hladina A − B',
+    rows.add((l.compareBroadbandDiff,
         '${(a.rmsDbfs - b.rmsDbfs).toStringAsFixed(1)} dB'));
 
     var worst = 0.0;
@@ -306,8 +309,8 @@ class _CompareScreenState extends State<CompareScreen> {
       }
     }
     if (worstBand != null) {
-      rows.add(('Největší rozdíl pod 300 Hz',
-          '${worst.toStringAsFixed(1)} dB v pásmu ${worstBand.label} Hz'));
+      rows.add((l.compareWorstBelow300,
+          l.compareWorstValue(worst.toStringAsFixed(1), worstBand.label)));
     }
 
     return Card(
@@ -330,9 +333,7 @@ class _CompareScreenState extends State<CompareScreen> {
               ),
             const SizedBox(height: 4),
             Text(
-              'Distance a level trim srovnají rozdíl příchodu a hladiny. '
-              'Rozdíl tvaru pod 300 Hz nesrovnají — ten dělá jiná stěna v jiné '
-              'vzdálenosti a řeší se posunem.',
+              l.compareTrimNote,
               style: t.textTheme.bodySmall,
             ),
           ],

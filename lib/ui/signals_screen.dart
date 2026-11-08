@@ -6,6 +6,7 @@ import '../signal/log_sweep.dart';
 import '../signal/pink_noise.dart';
 import '../signal/wav.dart';
 import '../store/session_store.dart';
+import '../l10n/l10n.dart';
 
 /// Phase 1 + 3: build the test signals and get them onto the system that
 /// actually drives the speakers.
@@ -34,8 +35,9 @@ class _SignalsScreenState extends State<SignalsScreen> {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
+    final l = context.l10n;
     return Scaffold(
-      appBar: AppBar(title: const Text('Signály')),
+      appBar: AppBar(title: Text(l.tabSignals)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -48,14 +50,12 @@ class _SignalsScreenState extends State<SignalsScreen> {
                   Text('Log sweep', style: t.textTheme.titleMedium),
                   const SizedBox(height: 4),
                   Text(
-                    'Jediný signál, ze kterého jde spočítat impulzní odezvu, '
-                    'doba dozvuku a první odrazy. Přehraj ho z počítače nebo '
-                    'DACu do beden, telefon nech nahrávat.',
+                    l.signalsSweepHelp,
                     style: t.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
                   _Slider(
-                    label: 'Délka',
+                    label: l.signalsLength,
                     value: _seconds,
                     min: 3,
                     max: 30,
@@ -63,7 +63,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
                     onChanged: (v) => setState(() => _seconds = v),
                   ),
                   _Slider(
-                    label: 'Od',
+                    label: l.signalsFrom,
                     value: _startHz,
                     min: 10,
                     max: 200,
@@ -71,7 +71,7 @@ class _SignalsScreenState extends State<SignalsScreen> {
                     onChanged: (v) => setState(() => _startHz = v),
                   ),
                   _Slider(
-                    label: 'Do',
+                    label: l.signalsTo,
                     value: _endHz,
                     min: 5000,
                     max: 22000,
@@ -86,9 +86,9 @@ class _SignalsScreenState extends State<SignalsScreen> {
                           value: _channel,
                           isExpanded: true,
                           items: [
-                            const DropdownMenuItem<Channel?>(
+                            DropdownMenuItem<Channel?>(
                               value: null,
-                              child: Text('Mono (bez kanálu)'),
+                              child: Text(l.signalsMonoNoChannel),
                             ),
                             for (final ch in Channel.values)
                               DropdownMenuItem<Channel?>(
@@ -104,12 +104,12 @@ class _SignalsScreenState extends State<SignalsScreen> {
                       const SizedBox(width: 8),
                       FilledButton.tonal(
                         onPressed: _busy ? null : _exportSweep,
-                        child: const Text('Export WAV'),
+                        child: Text(l.signalsExportWav),
                       ),
                     ],
                   ),
                   Text(
-                    _channelNote(_channel),
+                    _channelNote(l, _channel),
                     style: t.textTheme.bodySmall,
                   ),
                 ],
@@ -123,18 +123,16 @@ class _SignalsScreenState extends State<SignalsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Růžový šum', style: t.textTheme.titleMedium),
+                  Text(l.signalsPinkNoise, style: t.textTheme.titleMedium),
                   const SizedBox(height: 4),
                   Text(
-                    'Stejná energie v každé oktávě. Dá jen frekvenční '
-                    'charakteristiku, žádný čas ani odrazy — na rychlé '
-                    '„dělá to tu něco?" to stačí.',
+                    l.signalsPinkHelp,
                     style: t.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
                   FilledButton.tonal(
                     onPressed: _busy ? null : _exportPink,
-                    child: const Text('Export 30 s WAV'),
+                    child: Text(l.signalsExportPink),
                   ),
                 ],
               ),
@@ -148,15 +146,12 @@ class _SignalsScreenState extends State<SignalsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Jak měřit', style: t.textTheme.titleSmall),
+                  Text(l.signalsHowTo, style: t.textTheme.titleSmall),
                   const SizedBox(height: 8),
-                  const _Step('Signál pusť z počítače do beden, ne z telefonu.'),
-                  const _Step('Hlasitost nastav tak, aby analyzátor ukazoval '
-                      'kolem −20 dBFS. Přebuzení vypadá jako odraz.'),
-                  const _Step('Telefon drž svisle na natažené ruce, '
-                      'mikrofonem k bednám.'),
-                  const _Step('Odpoj Bluetooth sluchátka — komprese i latence '
-                      'měření znehodnotí.'),
+                  _Step(l.signalsStep1),
+                  _Step(l.signalsStep2),
+                  _Step(l.signalsStep3),
+                  _Step(l.signalsStep4),
                 ],
               ),
             ),
@@ -199,18 +194,12 @@ class _SignalsScreenState extends State<SignalsScreen> {
     await _shareBytes(name, bytes);
   }
 
-  static String _channelNote(Channel? ch) {
-    if (ch == null) {
-      return 'Mono do obou beden najednou sečte L a R a jejich rozdíl zmizí '
-          'v součtu. Pro měření kanálů vyber kanál.';
-    }
+  static String _channelNote(AppLocalizations l, Channel? ch) {
+    if (ch == null) return l.signalsNoteMono;
     if (ch == Channel.frontLeft || ch == Channel.frontRight) {
-      return 'Stereo soubor se signálem jen v jednom kanálu — pustí ho '
-          'cokoli, co hraje stereo.';
+      return l.signalsNoteStereo;
     }
-    return 'Mono soubor pojmenovaný podle kanálu. Nasměruj ho na správný '
-        'vstup přijímače z DAW nebo přes vícekanálový vstup; laptop se '
-        'stereo výstupem ho na tenhle kanál nedostane.';
+    return l.signalsNoteChannel;
   }
 
   Future<void> _exportPink() async {

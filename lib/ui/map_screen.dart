@@ -11,6 +11,7 @@ import '../export/frd.dart';
 import '../model/measurement.dart';
 import '../store/session_store.dart';
 import 'widgets/heatmap_view.dart';
+import '../l10n/l10n.dart';
 
 /// Phase 2 + 4: the floor-plan heatmap, one band at a time, plus exports.
 class MapScreen extends StatefulWidget {
@@ -40,7 +41,7 @@ class _MapScreenState extends State<MapScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Mapa'),
+            title: Text(context.l10n.tabMap),
             actions: [
               if (points.isNotEmpty)
                 IconButton(
@@ -50,18 +51,17 @@ class _MapScreenState extends State<MapScreen> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.ios_share),
-                  tooltip: 'Export FRD + JSON',
+                  tooltip: context.l10n.mapExportTooltip,
                   onPressed: _exporting ? null : _export,
                 ),
             ],
           ),
           body: points.length < 2
-              ? const Center(
+              ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(32),
+                    padding: const EdgeInsets.all(32),
                     child: Text(
-                      'Mapa potřebuje aspoň dva body. Projdi místnost '
-                      'a průběžně měř.',
+                      context.l10n.mapNeedsTwoPoints,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -94,6 +94,7 @@ class _MapScreenState extends State<MapScreen> {
     final session = widget.state.session;
     final store = widget.store;
     if (session == null || store == null) return;
+    final l = context.l10n;
 
     setState(() => _exporting = true);
     try {
@@ -142,7 +143,7 @@ class _MapScreenState extends State<MapScreen> {
       await SharePlus.instance.share(ShareParams(
         files: files,
         subject: 'AudioScanner — ${session.name}',
-        text: 'FRD po bodech (import do REW / VituixCAD) a celá session v JSON.',
+        text: l.mapShareText,
       ));
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -206,9 +207,8 @@ class _Summary extends StatelessWidget {
             child: Text(
               best == null
                   ? '—'
-                  : 'Nejrovnější místo: ${best.id} na ${best.position} m '
-                      '(rozptyl ${best.variationDb().toStringAsFixed(1)} dB '
-                      'v 40–300 Hz)',
+                  : context.l10n.mapFlattestSpot(best.id, '${best.position}',
+                      best.variationDb().toStringAsFixed(1)),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

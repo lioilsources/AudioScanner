@@ -6,6 +6,7 @@ import '../../dsp/graphic_eq.dart';
 import '../../export/avr_config.dart';
 import '../../model/measurement.dart';
 import 'response_chart.dart';
+import '../../l10n/l10n.dart';
 
 /// Measured, target and predicted-after-EQ for one channel, plus the
 /// verification measurement when there is one.
@@ -62,6 +63,7 @@ class EqPreview extends StatelessWidget {
     }
 
     final stubborn = <String>[];
+    final l = context.l10n;
     for (var i = 0; i < centers.length; i++) {
       if (centers[i] > maxEqHz || centers[i] < 40) continue;
       if ((predicted[i] - eq.targetDb[i]).abs() > 6) {
@@ -84,28 +86,28 @@ class EqPreview extends StatelessWidget {
                   ResponseCurve(
                     frequencies: centers,
                     levelsDb: eq.basisDb,
-                    label: 'změřeno',
+                    label: l.eqMeasured,
                     color: t.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                     strokeWidth: 1.5,
                   ),
                   ResponseCurve(
                     frequencies: centers,
                     levelsDb: eq.targetDb,
-                    label: 'cíl',
+                    label: l.eqTarget,
                     color: t.colorScheme.tertiary,
                     strokeWidth: 1.5,
                   ),
                   ResponseCurve(
                     frequencies: centers,
                     levelsDb: predicted,
-                    label: 'předpověď po EQ',
+                    label: l.eqPredicted,
                     color: t.colorScheme.primary,
                   ),
                   if (verified != null)
                     ResponseCurve(
                       frequencies: centers,
                       levelsDb: verified,
-                      label: 'změřeno po EQ',
+                      label: l.eqMeasuredAfter,
                       color: t.colorScheme.error,
                     ),
                 ],
@@ -115,21 +117,19 @@ class EqPreview extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            _line(t, 'Odchylka od cíle 40–${maxEqHz.round()} Hz',
+            _line(t, l.eqDeviation(maxEqHz.round()),
                 '${before.toStringAsFixed(1)} → ${after.toStringAsFixed(1)} dB'),
             if (verifiedDeviation != null)
-              _line(t, 'Po zadání do přijímače',
+              _line(t, l.eqAfterEntering,
                   '${verifiedDeviation.toStringAsFixed(1)} dB'),
             if (predictionError != null)
-              _line(t, 'Předpověď vs. skutečnost',
+              _line(t, l.eqPredictionVsReality,
                   '${predictionError.toStringAsFixed(1)} dB'),
             if (stubborn.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  'Zůstane dál od cíle než 6 dB: ${stubborn.join(', ')}. To je '
-                  'interference, ne nedostatek výkonu — řeší se posunem repro '
-                  'nebo posluchače, ne dalším zdvihem.',
+                  l.eqStubborn(stubborn.join(', ')),
                   style: t.textTheme.bodySmall,
                 ),
               ),
@@ -138,10 +138,8 @@ class EqPreview extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   predictionError <= 2
-                      ? 'Filtr přijímače se chová zhruba jako model.'
-                      : 'Skutečný filtr přijímače se od modelu liší o víc, než '
-                          'se čekalo — jeho pásma jsou nejspíš širší nebo užší, '
-                          'než se tu předpokládá.',
+                      ? l.eqModelOk
+                      : l.eqModelOff,
                   style: t.textTheme.bodySmall,
                 ),
               ),
@@ -183,6 +181,7 @@ class TargetCurveEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final freqs = [for (var i = 0; i <= 200; i++) 20 * math.pow(2, i / 20).toDouble()];
+    final l = context.l10n;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -192,10 +191,10 @@ class TargetCurveEditor extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Cílová křivka', style: t.textTheme.titleMedium),
+                Text(l.eqTargetCurve, style: t.textTheme.titleMedium),
                 Row(
                   children: [
-                    Text('plochá', style: t.textTheme.bodySmall),
+                    Text(l.eqFlat, style: t.textTheme.bodySmall),
                     Switch(
                       value: target.isFlat,
                       onChanged: (flat) => onChanged(flat
@@ -207,9 +206,7 @@ class TargetCurveEditor extends StatelessWidget {
               ],
             ),
             Text(
-              'Ne rovná: nad pár kHz ucho slyší přímý zvuk, mikrofon sčítá i '
-              'odrazy, a srovnaná měřená křivka zní tupě. Mírný sklon nahoře '
-              'a trocha basu dole je to, co lidé v slepém poslechu volí.',
+              l.eqTargetHelp,
               style: t.textTheme.bodySmall,
             ),
             SizedBox(
@@ -219,7 +216,7 @@ class TargetCurveEditor extends StatelessWidget {
                   ResponseCurve(
                     frequencies: freqs,
                     levelsDb: [for (final f in freqs) target.levelAt(f)],
-                    label: 'cíl',
+                    label: l.eqTarget,
                     color: t.colorScheme.tertiary,
                   ),
                 ],
@@ -228,13 +225,13 @@ class TargetCurveEditor extends StatelessWidget {
                 showLegend: false,
               ),
             ),
-            _slider(t, 'Zdvih basů', target.bassLiftDb, 0, 8, 'dB',
+            _slider(t, l.eqBassLift, target.bassLiftDb, 0, 8, 'dB',
                 (v) => onChanged(target.copyWith(bassLiftDb: v)), 1),
-            _slider(t, 'Basy pod', target.bassLiftBelowHz, 40, 160, 'Hz',
+            _slider(t, l.eqBassBelow, target.bassLiftBelowHz, 40, 160, 'Hz',
                 (v) => onChanged(target.copyWith(bassLiftBelowHz: v)), 0),
-            _slider(t, 'Sklon', target.tiltDbPerOctave, -2, 0, 'dB/okt',
+            _slider(t, l.eqTilt, target.tiltDbPerOctave, -2, 0, l.eqDbPerOctave,
                 (v) => onChanged(target.copyWith(tiltDbPerOctave: v)), 1),
-            _slider(t, 'Sklon od', target.tiltAboveHz, 500, 4000, 'Hz',
+            _slider(t, l.eqTiltFrom, target.tiltAboveHz, 500, 4000, 'Hz',
                 (v) => onChanged(target.copyWith(tiltAboveHz: v)), 0),
           ],
         ),

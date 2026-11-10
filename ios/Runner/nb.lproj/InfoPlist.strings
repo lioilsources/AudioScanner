@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Kameraet brukes bare til å spore telefonens posisjon i rommet (ARKit). Bilder lagres eller sendes aldri noe sted.";
+"NSMicrophoneUsageDescription" = "Mikrofonen er målesonden: AudioScanner fanger opp lyden i rommet og beregner frekvensresponsen. Opptakene blir på telefonen din.";

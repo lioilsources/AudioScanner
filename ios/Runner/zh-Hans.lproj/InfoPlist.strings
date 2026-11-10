@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "相机仅用于跟踪手机在房间内的位置（ARKit）。图像不会被保存，也不会发送到任何地方。";
+"NSMicrophoneUsageDescription" = "麦克风是测量探头：AudioScanner 采集房间的声音并计算频率响应。录音保留在你的手机上。";

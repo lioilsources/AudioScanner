@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "相機僅用於追蹤手機在房間內的位置（ARKit）。影像不會被儲存，也不會傳送到任何地方。";
+"NSMicrophoneUsageDescription" = "麥克風是量測探針：AudioScanner 擷取房間的聲音並計算頻率響應。錄音保留在你的手機上。";

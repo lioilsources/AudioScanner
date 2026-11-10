@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Camera este folosită doar pentru a urmări poziția telefonului în cameră (ARKit). Imaginile nu sunt niciodată salvate sau trimise nicăieri.";
+"NSMicrophoneUsageDescription" = "Microfonul este sonda de măsurare: AudioScanner captează sunetul camerei și calculează răspunsul în frecvență. Înregistrările rămân pe telefonul tău.";

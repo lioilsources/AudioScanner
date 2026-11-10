@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "A câmara é usada apenas para acompanhar a posição do telemóvel na divisão (ARKit). As imagens nunca são guardadas nem enviadas para lado nenhum.";
+"NSMicrophoneUsageDescription" = "O microfone é a sonda de medição: o AudioScanner capta o som da divisão e calcula a resposta em frequência. As gravações ficam no seu telemóvel.";

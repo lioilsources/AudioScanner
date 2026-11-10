@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "De camera wordt alleen gebruikt om de positie van de telefoon in de kamer te volgen (ARKit). Beelden worden nergens opgeslagen of verzonden.";
+"NSMicrophoneUsageDescription" = "De microfoon is de meetsonde: AudioScanner neemt het geluid van de kamer op en berekent de frequentieresponsie. Opnamen blijven op je telefoon.";

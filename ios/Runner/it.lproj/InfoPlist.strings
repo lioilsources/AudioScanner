@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "La fotocamera serve solo a seguire la posizione del telefono nella stanza (ARKit). Le immagini non vengono mai salvate né inviate.";
+"NSMicrophoneUsageDescription" = "Il microfono è la sonda di misura: AudioScanner rileva il suono della stanza e calcola la risposta in frequenza. Le registrazioni restano sul telefono.";

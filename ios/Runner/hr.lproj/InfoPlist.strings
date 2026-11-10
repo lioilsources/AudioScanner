@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Kamera se koristi isključivo za praćenje položaja telefona u prostoriji (ARKit). Slike se nikada ne spremaju niti šalju.";
+"NSMicrophoneUsageDescription" = "Mikrofon je mjerna sonda: AudioScanner snima zvuk prostorije i izračunava frekvencijski odziv. Snimke ostaju na vašem telefonu.";

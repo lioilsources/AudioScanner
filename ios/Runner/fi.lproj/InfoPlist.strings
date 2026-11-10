@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Kameraa käytetään vain puhelimen sijainnin seuraamiseen huoneessa (ARKit). Kuvia ei tallenneta eikä lähetetä minnekään.";
+"NSMicrophoneUsageDescription" = "Mikrofoni on mittausanturi: AudioScanner tallentaa huoneen äänen ja laskee taajuusvasteen. Äänitteet pysyvät puhelimessasi.";

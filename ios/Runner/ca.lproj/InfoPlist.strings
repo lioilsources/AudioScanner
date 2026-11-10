@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "La càmera només serveix per seguir la posició del telèfon a l'habitació (ARKit). Les imatges mai es desen ni s'envien enlloc.";
+"NSMicrophoneUsageDescription" = "El micròfon és la sonda de mesura: AudioScanner capta el so de l'habitació i en calcula la resposta en freqüència. Els enregistraments es queden al telèfon.";

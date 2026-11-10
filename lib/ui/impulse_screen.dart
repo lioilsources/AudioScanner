@@ -16,6 +16,7 @@ import 'widgets/response_chart.dart';
 import 'widgets/spectrogram_view.dart';
 import 'widgets/time_chart.dart';
 import '../dsp/spectrogram.dart';
+import '../l10n/l10n.dart';
 
 /// Phase 3: record a sweep, deconvolve it, read the room's timing.
 ///
@@ -70,15 +71,16 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
       builder: (context, _) {
         final s = widget.state;
         final ir = s.impulseResponse;
+        final l = context.l10n;
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Impulzní odezva'),
+            title: Text(l.impulseTitle),
             actions: [
               if (widget.store != null || (s.session?.points.length ?? 0) >= 2)
                 IconButton(
                   icon: const Icon(Icons.compare_arrows),
-                  tooltip: 'Srovnat body',
+                  tooltip: l.impulseCompareTooltip,
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => CompareScreen(state: s, store: widget.store),
@@ -88,7 +90,7 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
               if (ir != null)
                 IconButton(
                   icon: const Icon(Icons.ios_share),
-                  tooltip: 'Export FRD s fází',
+                  tooltip: l.impulseExportTooltip,
                   onPressed: () => _exportFrd(_analysisFor(ir)),
                 ),
             ],
@@ -101,8 +103,8 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                   color: Theme.of(context).colorScheme.errorContainer,
                   child: ListTile(
                     leading: const Icon(Icons.mic_off),
-                    title: const Text('Mikrofon neběží'),
-                    subtitle: Text(s.error ?? 'Klepni pro spuštění.'),
+                    title: Text(l.commonMicNotRunning),
+                    subtitle: Text(s.error ?? l.impulseTapToStart),
                     onTap: s.startListening,
                   ),
                 ),
@@ -112,12 +114,11 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Sweep, který pustíš do beden',
+                      Text(l.impulseSweepTitle,
                           style: Theme.of(context).textTheme.titleMedium),
                       Text(
-                        '${_startHz.round()} – ${_endHz.round()} Hz, '
-                        '${_seconds.round()} s. Musí sedět s tím, co přehráváš '
-                        '— jinak dekonvoluce vrátí nesmysl.',
+                        l.impulseSweepHelp(_startHz.round(), _endHz.round(),
+                            _seconds.round()),
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       Slider(
@@ -141,11 +142,11 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.fiber_manual_record),
                     title: Text(
-                        'Nahrávám — ${s.recordedSeconds.toStringAsFixed(1)} s'),
-                    subtitle: const Text('Teď pusť sweep z počítače.'),
+                        l.impulseRecording(s.recordedSeconds.toStringAsFixed(1))),
+                    subtitle: Text(l.impulsePlaySweepNow),
                     trailing: FilledButton(
                       onPressed: () => s.finishSweepRecording(_sweep),
-                      child: const Text('Hotovo'),
+                      child: Text(l.commonDone),
                     ),
                   ),
                 )
@@ -153,7 +154,7 @@ class _ImpulseScreenState extends State<ImpulseScreen> {
                 FilledButton.icon(
                   onPressed: s.listening ? s.startSweepRecording : null,
                   icon: const Icon(Icons.fiber_manual_record),
-                  label: const Text('Začít nahrávat, pak pustit sweep'),
+                  label: Text(l.impulseStartRecording),
                 ),
               const SizedBox(height: 16),
               if (ir != null) ...[
@@ -234,6 +235,7 @@ class _ResponseCard extends StatelessWidget {
     final toReflectionMs = reflection == null
         ? null
         : (reflection - ir.directSoundIndex) / ir.sampleRate * 1000 - 0.5;
+    final l = context.l10n;
 
     return Card(
       child: Padding(
@@ -241,7 +243,7 @@ class _ResponseCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Frekvenční odezva', style: t.textTheme.titleMedium),
+            Text(l.impulseFrequencyResponse, style: t.textTheme.titleMedium),
             const SizedBox(height: 8),
             SizedBox(
               height: 220,
@@ -250,14 +252,14 @@ class _ResponseCard extends StatelessWidget {
                   ResponseCurve(
                     frequencies: analysis.frequencies,
                     levelsDb: correct(analysis.roomSmoothed(smoothing)),
-                    label: 's místností (1 s)',
+                    label: l.impulseWithRoom,
                     color: t.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                     strokeWidth: 1.5,
                   ),
                   ResponseCurve(
                     frequencies: analysis.frequencies,
                     levelsDb: correct(analysis.gatedSmoothed(smoothing)),
-                    label: 'přímý zvuk (okno ${gateMs.toStringAsFixed(gateMs < 10 ? 1 : 0)} ms)',
+                    label: l.impulseDirectWindow(gateMs.toStringAsFixed(gateMs < 10 ? 1 : 0)),
                     color: t.colorScheme.primary,
                   ),
                 ],
@@ -267,7 +269,7 @@ class _ResponseCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                Text('Okno', style: t.textTheme.bodyMedium),
+                Text(l.impulseWindow, style: t.textTheme.bodyMedium),
                 Expanded(
                   child: Slider(
                     value: math.log(gateMs.clamp(_minGateMs, _maxGateMs)),
@@ -283,10 +285,7 @@ class _ResponseCard extends StatelessWidget {
               ],
             ),
             Text(
-              'Delší okno vidí níž (teď platné nad '
-              '${analysis.validAbove.toStringAsFixed(0)} Hz), ale pustí dovnitř '
-              'první odraz. Pod hranicí se křivka nevyhlazuje ani nekomentuje: '
-              'je to okno, ne místnost.',
+              l.impulseWindowHelp(analysis.validAbove.toStringAsFixed(0)),
               style: t.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -300,7 +299,7 @@ class _ResponseCard extends StatelessWidget {
                     onPressed: () => onGateChanged(
                         double.parse(toReflectionMs.toStringAsFixed(1))),
                     child: Text(
-                        'Do prvního odrazu (${toReflectionMs.toStringAsFixed(1)} ms)'),
+                        l.impulseToFirstReflection(toReflectionMs.toStringAsFixed(1))),
                   ),
                 SegmentedButton<int>(
                   segments: const [
@@ -347,7 +346,7 @@ class _TimeCardState extends State<_TimeCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Čas', style: t.textTheme.titleMedium),
+            Text(context.l10n.impulseTime, style: t.textTheme.titleMedium),
             const SizedBox(height: 8),
             SizedBox(
               height: 160,
@@ -364,9 +363,9 @@ class _TimeCardState extends State<_TimeCard> {
               runSpacing: 4,
               children: [
                 SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: true, label: Text('ETC (dB)')),
-                    ButtonSegment(value: false, label: Text('impuls')),
+                  segments: [
+                    const ButtonSegment(value: true, label: Text('ETC (dB)')),
+                    ButtonSegment(value: false, label: Text(context.l10n.impulseImpulse)),
                   ],
                   selected: {_etc},
                   showSelectedIcon: false,
@@ -385,8 +384,7 @@ class _TimeCardState extends State<_TimeCard> {
               ],
             ),
             Text(
-              'Modré je okno, oranžová čára první nalezený odraz. Čas nula je '
-              'přímý zvuk.',
+              context.l10n.impulseTimeHelp,
               style: t.textTheme.bodySmall,
             ),
           ],
@@ -429,10 +427,10 @@ class _SpectrogramCardState extends State<_SpectrogramCard> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Spektrogram', style: t.textTheme.titleMedium),
+                Text(context.l10n.impulseSpectrogram, style: t.textTheme.titleMedium),
                 TextButton(
                   onPressed: () => setState(() => _open = !_open),
-                  child: Text(_open ? 'Skrýt' : 'Zobrazit'),
+                  child: Text(_open ? context.l10n.commonHide : context.l10n.commonShow),
                 ),
               ],
             ),
@@ -440,9 +438,7 @@ class _SpectrogramCardState extends State<_SpectrogramCard> {
               SizedBox(height: 200, child: SpectrogramView(spectrogram: _get())),
               const SizedBox(height: 6),
               Text(
-                'Čas v ms od přímého zvuku, frekvence nahoru, barva je hladina '
-                'do −60 dB. Vodorovný pruh, který přežije ostatní, je mód; '
-                'tabulka nad tím říká totéž číslem.',
+                context.l10n.impulseSpectrogramHelp,
                 style: t.textTheme.bodySmall,
               ),
             ],
@@ -476,7 +472,7 @@ class _BandTable extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Doznívání po oktávách', style: t.textTheme.titleMedium),
+            Text(context.l10n.impulseDecayByOctave, style: t.textTheme.titleMedium),
             const SizedBox(height: 8),
             Table(
               columnWidths: const {0: FixedColumnWidth(48)},
@@ -511,10 +507,8 @@ class _BandTable extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${mid == null ? 'Střední pásma nedoklesla dost na T20.' : 'Střed 125–500 Hz: T20 ${mid.toStringAsFixed(2)} s — to je RT60, se kterým počítá návrh.'} '
-              'V basech je RT60 z telefonu spíš odhad: šum pozadí tam bývá '
-              'nejblíž a „—" znamená, že dozvuk pod něj nedoklesl. C50 nad '
-              'nulou: přímý zvuk s prvními odrazy nese víc energie než dozvuk.',
+              '${mid == null ? context.l10n.impulseMidNoT20 : context.l10n.impulseMidT20(mid.toStringAsFixed(2))} '
+              '${context.l10n.impulseDecayHelp}',
               style: t.textTheme.bodySmall,
             ),
           ],
@@ -548,6 +542,7 @@ class _Results extends StatelessWidget {
 
     String ms(int samples) =>
         '${(samples / ir.sampleRate * 1000).toStringAsFixed(1)} ms';
+    final l = context.l10n;
 
     return Card(
       child: Padding(
@@ -555,44 +550,40 @@ class _Results extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Výsledek', style: Theme.of(context).textTheme.titleMedium),
+            Text(l.impulseResult, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
-            _Row('Přímý zvuk dorazil za', ms(ir.directSoundIndex),
-                'Zpoždění přehrávání plus doba letu — samo o sobě nic neříká, '
-                'ale rozdíl mezi L a R bednou ano.'),
+            _Row(l.impulseDirectArrived, ms(ir.directSoundIndex),
+                l.impulseDirectArrivedHelp),
             _Row(
-              'První odraz',
+              l.impulseFirstReflection,
               reflection == null
-                  ? 'nenalezen'
-                  : '${ms(reflection - ir.directSoundIndex)} po přímém zvuku',
+                  ? l.impulseNotFound
+                  : l.impulseAfterDirect(ms(reflection - ir.directSoundIndex)),
               reflection == null
-                  ? 'Buď tam žádný není, nebo se schoval ve vyzvánění '
-                      'přímého impulsu.'
-                  : 'Dráha navíc ≈ '
-                      '${((reflection - ir.directSoundIndex) / ir.sampleRate * 343).toStringAsFixed(2)} m.',
+                  ? l.impulseNoReflectionHelp
+                  : l.impulseExtraPath(((reflection - ir.directSoundIndex) /
+                          ir.sampleRate *
+                          343)
+                      .toStringAsFixed(2)),
             ),
             _Row(
               'RT60',
               rt20 == null
-                  ? 'nezměřitelné'
+                  ? l.impulseUnmeasurable
                   : '${(rt20.inMilliseconds / 1000).toStringAsFixed(2)} s (T20)'
                       '${rt30 == null ? "" : " · ${(rt30.inMilliseconds / 1000).toStringAsFixed(2)} s (T30)"}',
-              rt20 == null
-                  ? 'Dozvuk nedoklesl dost hluboko nad šumové pozadí — '
-                      'hlasitěji, nebo v tišší chvíli.'
-                  : 'Rozdíl mezi T20 a T30 napovídá, jak čistý je doznívání.',
+              rt20 == null ? l.impulseRt60NoiseHelp : l.impulseRt60Help,
             ),
             _Row(
-              'Okno (gating)',
-              'platné nad '
-                  '${gated.gatedResponseValidAbove.toStringAsFixed(0)} Hz',
-              'Pod tím okno neuvidí ani jednu periodu — křivka tam je '
-                  'artefakt okna, ne místnosti.',
+              l.impulseGating,
+              l.impulseValidAbove(
+                  gated.gatedResponseValidAbove.toStringAsFixed(0)),
+              l.impulseGatingHelp,
             ),
             if (distortion.isNotEmpty) ..._distortionRows(context),
             const SizedBox(height: 12),
             SizedBox(height: 120, child: _DecayChart(ir: ir)),
-            Text('Schroederova křivka doznívání',
+            Text(l.impulseSchroeder,
                 style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
@@ -605,6 +596,7 @@ extension on _Results {
   List<Widget> _distortionRows(BuildContext context) {
     String fmt(double v) => v.isNaN ? '—' : '${v.toStringAsFixed(0)} dB';
     final rows = <Widget>[];
+    final l = context.l10n;
     var worst = -160.0;
     for (final h in distortion) {
       final at100 = h.at(100);
@@ -613,23 +605,18 @@ extension on _Results {
         if (!v.isNaN && v > worst) worst = v;
       }
       rows.add(_Row(
-        'HD${h.order} při 100 Hz / 1 kHz',
+        l.impulseHdAt(h.order),
         '${fmt(at100)} / ${fmt(at1k)}',
-        h.order == 2
-            ? 'Harmonické leží v záporném čase Farinovy dekonvoluce; tady se '
-                'z něj čtou místo zahazování. −40 dB je 1 %.'
-            : 'Třetí harmonická roste s přebuzením rychleji než druhá.',
+        h.order == 2 ? l.impulseHd2Help : l.impulseHd3Help,
       ));
     }
     if (worst > _Results._hotDb) {
       rows.add(Card(
         color: Theme.of(context).colorScheme.errorContainer,
-        child: const ListTile(
-          leading: Icon(Icons.warning_amber),
-          title: Text('Zkreslení nad −30 dB'),
-          subtitle: Text('Buď je sweep příliš nahlas, nebo je repro na hraně. '
-              'Ohon zkreslení vypadá v impulzu jako odraz — uber hlasitost a '
-              'změř znovu, než něčemu uvěříš.'),
+        child: ListTile(
+          leading: const Icon(Icons.warning_amber),
+          title: Text(l.impulseDistortionHot),
+          subtitle: Text(l.impulseDistortionHotHelp),
         ),
       ));
     }

@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Kamera hanya dipakai untuk melacak posisi ponsel di ruangan (ARKit). Gambar tidak pernah disimpan atau dikirim ke mana pun.";
+"NSMicrophoneUsageDescription" = "Mikrofon adalah probe pengukuran: AudioScanner menangkap suara ruangan dan menghitung respons frekuensi. Rekaman tetap ada di ponsel Anda.";

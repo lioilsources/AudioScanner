@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Camera chỉ dùng để theo dõi vị trí điện thoại trong phòng (ARKit). Hình ảnh không bao giờ được lưu hay gửi đi đâu.";
+"NSMicrophoneUsageDescription" = "Micro là đầu dò đo lường: AudioScanner thu âm thanh của phòng và tính đáp ứng tần số. Bản ghi vẫn nằm trên điện thoại của bạn.";

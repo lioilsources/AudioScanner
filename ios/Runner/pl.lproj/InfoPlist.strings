@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Aparat służy wyłącznie do śledzenia położenia telefonu w pomieszczeniu (ARKit). Obrazy nigdy nie są zapisywane ani nigdzie wysyłane.";
+"NSMicrophoneUsageDescription" = "Mikrofon jest sondą pomiarową: AudioScanner rejestruje dźwięk w pomieszczeniu i oblicza charakterystykę częstotliwościową. Nagrania zostają w telefonie.";

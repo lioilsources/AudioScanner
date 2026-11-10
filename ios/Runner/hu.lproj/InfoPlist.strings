@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "A kamera kizárólag a telefon helyzetének követésére szolgál a szobában (ARKit). A képeket sehol nem tároljuk és nem küldjük el.";
+"NSMicrophoneUsageDescription" = "A mikrofon a mérőszonda: az AudioScanner rögzíti a szoba hangját, és kiszámítja a frekvenciaátvitelt. A felvételek a telefonon maradnak.";

@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "카메라는 방 안에서 전화기의 위치를 추적하는 용도로만 사용됩니다(ARKit). 이미지는 저장되거나 어디로도 전송되지 않습니다.";
+"NSMicrophoneUsageDescription" = "마이크는 측정 프로브입니다. AudioScanner는 방의 소리를 받아 주파수 응답을 계산합니다. 녹음은 전화기에만 남습니다.";

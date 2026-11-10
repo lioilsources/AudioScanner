@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "A câmera é usada apenas para acompanhar a posição do celular no ambiente (ARKit). As imagens nunca são salvas nem enviadas para lugar nenhum.";
+"NSMicrophoneUsageDescription" = "O microfone é a sonda de medição: o AudioScanner capta o som do ambiente e calcula a resposta em frequência. As gravações ficam no seu celular.";

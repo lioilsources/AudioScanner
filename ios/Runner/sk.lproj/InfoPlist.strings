@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Kamera slúži výhradne na sledovanie polohy telefónu v miestnosti (ARKit). Obraz sa nikam neukladá ani neodosiela.";
+"NSMicrophoneUsageDescription" = "Mikrofón je meracia sonda: AudioScanner z neho snímá zvuk miestnosti a počíta frekvenčnú charakteristiku. Nahrávky zostávajú v telefóne.";

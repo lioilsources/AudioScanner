@@ -4,6 +4,7 @@ import '../app_state.dart';
 import '../model/measurement.dart';
 import '../room/speaker_layout.dart';
 import '../signal/log_sweep.dart';
+import '../l10n/l10n.dart';
 
 /// Measure each receiver channel with a sweep, from the seat.
 ///
@@ -41,6 +42,7 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
     final t = Theme.of(context);
     final s = widget.state;
     final session = s.session;
+    final l = context.l10n;
 
     return Card(
       child: Padding(
@@ -48,18 +50,15 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Měření kanálů', style: t.textTheme.titleMedium),
+            Text(l.channelsTitle, style: t.textTheme.titleMedium),
             Text(
-              'Stoupni si na místo posluchače. Pro každý kanál: začni '
-              'nahrávat, pusť do něj sweep ze záložky Signály, klepni na '
-              'Hotovo. Bez těchto bodů návrh nemá z čeho udělat EQ a '
-              'hlasitosti.',
+              l.channelsHelp,
               style: t.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                Text('Sweep ${_seconds.round()} s', style: t.textTheme.bodyMedium),
+                Text(l.channelsSweepLength(_seconds.round()), style: t.textTheme.bodyMedium),
                 Expanded(
                   child: Slider(
                     value: _seconds,
@@ -75,9 +74,8 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('Ověření po zadání EQ'),
-              subtitle: const Text('Bod se uloží jako „po EQ" a nepřepíše '
-                  'ten, ze kterého se EQ počítalo.'),
+              title: Text(l.channelsVerifyAfterEq),
+              subtitle: Text(l.channelsVerifyAfterEqHint),
               value: _afterEq,
               onChanged: _recording != null
                   ? null
@@ -87,7 +85,7 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
               TextButton.icon(
                 onPressed: s.startListening,
                 icon: const Icon(Icons.mic),
-                label: const Text('Spustit mikrofon'),
+                label: Text(l.commonStartMic),
               ),
             for (final ch in widget.channels)
               _channelRow(ch, session?.latestFor(ch.name, afterEq: _afterEq), t),
@@ -101,6 +99,7 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
     final s = widget.state;
     final recordingThis = _recording == ch;
     final summary = latest?.impulse;
+    final l = context.l10n;
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -110,22 +109,27 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
       ),
       title: Text(ch.label),
       subtitle: Text(recordingThis
-          ? 'Nahrávám ${s.recordedSeconds.toStringAsFixed(1)} s — teď pusť sweep'
+          ? l.channelsRecording(s.recordedSeconds.toStringAsFixed(1))
           : summary == null
-              ? (latest == null ? 'nezměřeno' : 'změřeno šumem')
-              : '${_takes(ch)}× · přímý zvuk za ${summary.arrivalMs.toStringAsFixed(1)} ms'
-                  '${summary.rt20 == null ? '' : ', T20 ${(summary.rt20!.inMilliseconds / 1000).toStringAsFixed(2)} s'}'),
+              ? (latest == null ? l.channelsNotMeasured : l.channelsMeasuredNoise)
+              : summary.rt20 == null
+                  ? l.channelsSummary(
+                      _takes(ch), summary.arrivalMs.toStringAsFixed(1))
+                  : l.channelsSummaryT20(
+                      _takes(ch),
+                      summary.arrivalMs.toStringAsFixed(1),
+                      (summary.rt20!.inMilliseconds / 1000).toStringAsFixed(2))),
       trailing: recordingThis
           ? FilledButton(
               onPressed: () => _finish(ch),
-              child: const Text('Hotovo'),
+              child: Text(l.commonDone),
             )
           : latest == null
               ? OutlinedButton(
                   onPressed: _recording == null && s.listening
                       ? () => _start(ch, replace: false)
                       : null,
-                  child: const Text('Změřit'),
+                  child: Text(l.channelsMeasure),
                 )
               : Row(
                   mainAxisSize: MainAxisSize.min,
@@ -136,13 +140,13 @@ class _ChannelMeasureCardState extends State<ChannelMeasureCard> {
                       onPressed: _recording == null && s.listening
                           ? () => _start(ch, replace: false)
                           : null,
-                      child: const Text('Přidat'),
+                      child: Text(l.channelsAdd),
                     ),
                     TextButton(
                       onPressed: _recording == null && s.listening
                           ? () => _start(ch, replace: true)
                           : null,
-                      child: const Text('Znovu'),
+                      child: Text(l.channelsAgain),
                     ),
                   ],
                 ),

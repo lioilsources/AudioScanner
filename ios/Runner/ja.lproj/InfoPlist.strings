@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "カメラは部屋の中での電話の位置を追跡するためだけに使用します（ARKit）。画像は保存も送信もされません。";
+"NSMicrophoneUsageDescription" = "マイクは測定用プローブです。AudioScanner は部屋の音を取り込んで周波数特性を計算します。録音データはお使いの電話から出ません。";

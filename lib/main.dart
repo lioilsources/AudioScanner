@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
+import 'l10n/l10n.dart';
 import 'store/session_store.dart';
 import 'ui/design_screen.dart';
 import 'ui/impulse_screen.dart';
@@ -44,6 +45,14 @@ class _AudioScannerAppState extends State<AudioScannerApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'AudioScanner',
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      builder: (context, child) {
+        // AppState formats its own error messages, so it needs the current
+        // locale's strings outside the widget tree.
+        _state.l10n = AppLocalizations.of(context);
+        return child!;
+      },
       theme: ThemeData(
         colorSchemeSeed: const Color(0xFF2B6CB0),
         brightness: Brightness.light,
@@ -88,18 +97,19 @@ class _HomeState extends State<_Home> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
+        destinations: [
           NavigationDestination(
-              icon: Icon(Icons.graphic_eq), label: 'Analyzátor'),
+              icon: const Icon(Icons.graphic_eq), label: context.l10n.tabAnalyzer),
           NavigationDestination(
-              icon: Icon(Icons.view_in_ar_outlined), label: 'Sken'),
-          NavigationDestination(icon: Icon(Icons.map_outlined), label: 'Mapa'),
+              icon: const Icon(Icons.view_in_ar_outlined), label: context.l10n.tabScan),
           NavigationDestination(
-              icon: Icon(Icons.timeline), label: 'Odezva'),
+              icon: const Icon(Icons.map_outlined), label: context.l10n.tabMap),
           NavigationDestination(
-              icon: Icon(Icons.architecture), label: 'Návrh'),
+              icon: const Icon(Icons.timeline), label: context.l10n.tabResponse),
           NavigationDestination(
-              icon: Icon(Icons.waves), label: 'Signály'),
+              icon: const Icon(Icons.architecture), label: context.l10n.tabDesign),
+          NavigationDestination(
+              icon: const Icon(Icons.waves), label: context.l10n.tabSignals),
         ],
       ),
     );

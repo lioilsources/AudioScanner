@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show Locale;
 
 import 'package:flutter/foundation.dart';
 
@@ -15,6 +16,8 @@ import 'model/mic_calibration.dart';
 import 'model/session.dart';
 import 'signal/log_sweep.dart';
 import 'store/session_store.dart';
+import 'l10n/app_localizations.dart';
+import 'l10n/labels.dart';
 
 /// Live state shared by the screens: the microphone, the tracker, and the
 /// session being built.
@@ -33,6 +36,10 @@ class AppState extends ChangeNotifier {
   final AudioCapture capture;
   final ArTracking tracking;
   final int fftSize;
+
+  /// Strings for messages this class formats itself. The app replaces it
+  /// with the current locale's as soon as the widget tree has one.
+  AppLocalizations l10n = lookupAppLocalizations(const Locale('cs'));
 
   SessionStore? _store;
   SpectrumAnalyzer? _analyzer;
@@ -146,8 +153,7 @@ class AppState extends ChangeNotifier {
     _error = null;
     try {
       if (!await capture.requestPermission()) {
-        _error = 'Bez přístupu k mikrofonu se měřit nedá. Povol ho v '
-            'Nastavení → AudioScanner → Mikrofon.';
+        _error = l10n.errorMicPermission;
         notifyListeners();
         return;
       }
@@ -158,12 +164,12 @@ class AppState extends ChangeNotifier {
       _analyzer = SpectrumAnalyzer(fftSize: fftSize, sampleRate: status.sampleRate);
       _assembler = FrameAssembler(frameSize: fftSize, hopSize: fftSize ~/ 2);
       _audioSub = capture.pcm.listen(_onSamples, onError: (Object e) {
-        _error = 'Mikrofon: $e';
+        _error = l10n.errorMic('$e');
         notifyListeners();
       });
       _listening = true;
     } catch (e) {
-      _error = 'Nepodařilo se spustit mikrofon: $e';
+      _error = l10n.errorMicStart('$e');
     }
     notifyListeners();
   }
@@ -178,8 +184,7 @@ class AppState extends ChangeNotifier {
 
   Future<bool> startTracking() async {
     if (!await tracking.isSupported()) {
-      _error = 'Tohle zařízení neumí ARKit world tracking — body se nedají '
-          'umísťovat do prostoru.';
+      _error = l10n.errorNoArkit;
       notifyListeners();
       return false;
     }
@@ -225,10 +230,9 @@ class AppState extends ChangeNotifier {
   ImpulseResponse? finishSweepRecording(LogSweep sweep) {
     _recordingSweep = false;
     if (_recording.length < sweep.length) {
-      _error = 'Nahrávka je kratší než sweep '
-          '(${(_recording.length / sweep.sampleRate).toStringAsFixed(1)} s '
-          'z ${(sweep.length / sweep.sampleRate).toStringAsFixed(1)} s). '
-          'Spusť nahrávání dřív, než pustíš signál.';
+      _error = l10n.errorRecordingTooShort(
+          (_recording.length / sweep.sampleRate).toStringAsFixed(1),
+          (sweep.length / sweep.sampleRate).toStringAsFixed(1));
       notifyListeners();
       return null;
     }
@@ -337,14 +341,13 @@ class AppState extends ChangeNotifier {
         (requirePose
             ? null
             : await beginSession(
-                name: 'Snímky', signal: ExcitationSignal.externalPinkNoise));
+                name: l10n.sessionSnapshots, signal: ExcitationSignal.externalPinkNoise));
     if (session == null || !_listening) return null;
 
     final p = _pose;
     final poseOk = p != null && p.quality.usableForMeasurement;
     if (requirePose && !poseOk) {
-      _error = p?.hint ??
-          'Sledování polohy není spolehlivé — bod by seděl jinde, než stojíš.';
+      _error = l10n.poseHint(p?.reason) ?? l10n.errorTrackingUnreliable;
       notifyListeners();
       return null;
     }
@@ -359,7 +362,7 @@ class AppState extends ChangeNotifier {
     final avg = _averager;
     _averager = null;
     if (avg == null || avg.blocks == 0) {
-      _error = 'Za ${duration.inSeconds} s nedorazil žádný zvuk.';
+      _error = l10n.errorNoSound(duration.inSeconds);
       notifyListeners();
       return null;
     }
@@ -373,7 +376,7 @@ class AppState extends ChangeNotifier {
           ? -160
           : 10 * math.log(_averagedRms / _averagedRmsCount) / math.ln10,
       arAccuracy: poseOk ? p.quality.name : null,
-      note: note ?? (poseOk ? null : 'snímek z analyzátoru, bez polohy'),
+      note: note ?? (poseOk ? null : l10n.noteSnapshotNoPose),
     );
     session.points.add(point);
     await _store?.save(session);
@@ -408,7 +411,7 @@ class AppState extends ChangeNotifier {
     if (ir == null) return null;
     final session = _session ??
         await beginSession(
-            name: 'Kanály', signal: ExcitationSignal.externalSweep);
+            name: l10n.sessionChannels, signal: ExcitationSignal.externalSweep);
 
     if (replace) {
       final stale = session.points

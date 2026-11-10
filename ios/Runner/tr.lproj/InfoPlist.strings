@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Kamera yalnızca telefonun odadaki konumunu izlemek için kullanılır (ARKit). Görüntüler hiçbir yere kaydedilmez veya gönderilmez.";
+"NSMicrophoneUsageDescription" = "Mikrofon ölçüm probudur: AudioScanner odanın sesini alır ve frekans yanıtını hesaplar. Kayıtlar telefonunuzda kalır.";

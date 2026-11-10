@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "L'appareil photo sert uniquement à suivre la position du téléphone dans la pièce (ARKit). Les images ne sont jamais enregistrées ni envoyées.";
+"NSMicrophoneUsageDescription" = "Le micro est la sonde de mesure : AudioScanner capte le son de la pièce et calcule la réponse en fréquence. Les enregistrements restent sur votre téléphone.";

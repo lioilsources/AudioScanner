@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "Die Kamera dient ausschließlich dazu, die Position des Telefons im Raum zu verfolgen (ARKit). Bilder werden weder gespeichert noch irgendwohin gesendet.";
+"NSMicrophoneUsageDescription" = "Das Mikrofon ist die Messsonde: AudioScanner nimmt den Raumklang auf und berechnet den Frequenzgang. Aufnahmen bleiben auf deinem Telefon.";
